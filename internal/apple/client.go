@@ -250,7 +250,7 @@ func (c *Client) VerifyCode(ctx context.Context, session Session, code string) (
 	acceptedConflict := response.status == http.StatusConflict && response.header.Get("X-Apple-Session-Token") != ""
 	if response.status == http.StatusPreconditionFailed {
 		if !repairCodeWasAccepted(response) {
-			return result, response.operationError("verify two-factor code", ErrTermsRequired, nil)
+			return result, response.operationError(loginRepairDiagnostic(response, defaultWidgetKey), ErrTermsRequired, nil)
 		}
 		if err := op.repairPhoneRequirement(ctx, response); err != nil {
 			return result, err

@@ -107,6 +107,36 @@ func TestLoginRepairLocationIsPinnedToCurrentWidget(t *testing.T) {
 	}
 }
 
+func TestLoginRepairDiagnosticExcludesResponseMaterial(t *testing.T) {
+	base := "https://appleid.apple.com/widget/account/repair?widgetKey=" + accountWidget + "&rv=11"
+	for _, tc := range []struct {
+		name, location, classification string
+	}{
+		{"missing", "", "missing"},
+		{"valid", base, "accepted"},
+		{"malformed", "%secret", "malformed"},
+		{"host", "https://secret.example/widget/account/repair", "host"},
+		{"path", "https://appleid.apple.com/secret", "path"},
+		{"query", base + "&secret=private-value", "query_extra"},
+		{"widget", strings.Replace(base, accountWidget, "private-value", 1), "widget"},
+		{"rv", strings.Replace(base, "rv=11", "rv=private-value", 1), "rv"},
+		{"userinfo", "https://private-value@appleid.apple.com/widget/account/repair", "url_shape"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := make(http.Header)
+			h.Set("scnt", "private-value")
+			h.Set("X-Apple-ID-Session-Id", "private-value")
+			h.Set("X-Apple-Repair-Session-Token", "private-value")
+			h.Set("Location", tc.location)
+			r := responseData{status: 412, header: h, body: []byte(`{"securityCode":{"valid":true},"secret":"private-value"}`)}
+			want := "Apple login repair gate: headers=1110 location=" + tc.classification + " code_accepted=true"
+			if got := loginRepairDiagnostic(r, accountWidget); got != want {
+				t.Fatalf("diagnostic contained unexpected material: %q", got)
+			}
+		})
+	}
+}
+
 func TestRepairWidgetParsesOnlyBoundJSON(t *testing.T) {
 	boot := `<script type="application/json" id="boot_args">{"direct":{"sessionId":"widget-session","scnt":"widget-scnt","origin":"https://idmsa.apple.com","widgetKey":"` + accountWidget + `"}}</script>`
 	for _, tc := range []struct {

@@ -204,7 +204,11 @@ func (c *Client) accountCallPolicy(ctx context.Context, s *AccountSession, metho
 		if r.status == 412 {
 			kind = ErrTermsRequired
 		}
-		return r, accountResponseError(r, kind)
+		failure := accountResponseError(r, kind)
+		if allowRepair && r.status == http.StatusPreconditionFailed {
+			failure.Op = loginRepairDiagnostic(r, headers.Get("X-Apple-Widget-Key"))
+		}
+		return r, failure
 	}
 	if r.status != 409 && !repair {
 		var envelope struct {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -53,6 +54,54 @@ func repairCodeWasAccepted(response responseData) bool {
 		} `json:"securityCode"`
 	}
 	return json.Unmarshal(response.body, &body) == nil && body.SecurityCode.Valid
+}
+
+// Only fixed categories and presence flags may reach the operation log. Never
+// include a Location, header value, query key supplied by Apple, or body text.
+func loginRepairDiagnostic(response responseData, widget string) string {
+	flags := ""
+	for _, name := range []string{"scnt", "X-Apple-ID-Session-Id", "X-Apple-Repair-Session-Token", "X-Apple-OAuth-Context"} {
+		if strings.TrimSpace(response.header.Get(name)) == "" {
+			flags += "0"
+		} else {
+			flags += "1"
+		}
+	}
+	location := "accepted"
+	u, err := url.Parse(response.header.Get("Location"))
+	switch {
+	case response.header.Get("Location") == "":
+		location = "missing"
+	case err != nil:
+		location = "malformed"
+	case u.Scheme != "https" || u.User != nil || u.Fragment != "" || u.RawPath != "":
+		location = "url_shape"
+	case u.Host != "appleid.apple.com":
+		location = "host"
+	case u.Path != "/widget/account/repair":
+		location = "path"
+	default:
+		q, parseErr := url.ParseQuery(u.RawQuery)
+		rv := "3"
+		if widget == accountWidget {
+			rv = "11"
+		}
+		switch {
+		case parseErr != nil:
+			location = "query_malformed"
+		case len(q["widgetKey"]) != 1 || q.Get("widgetKey") != widget:
+			location = "widget"
+		case len(q["rv"]) != 1 || q.Get("rv") != rv:
+			location = "rv"
+		default:
+			for key := range q {
+				if key != "widgetKey" && key != "rv" && key != "language" && key != "v" {
+					location = "query_extra"
+				}
+			}
+		}
+	}
+	return fmt.Sprintf("Apple login repair gate: headers=%s location=%s code_accepted=%t", flags, location, repairCodeWasAccepted(response))
 }
 
 type repairBoot struct {
@@ -155,7 +204,7 @@ func (c *Client) repairPhoneRequirement(ctx context.Context, auth AccountSession
 	widget := authHeaders.Get("X-Apple-Widget-Key")
 	u, ok := loginRepairLocation(challenge, widget)
 	if !ok {
-		return auth, responseData{}, challenge.operationError("Apple login requires account action", ErrTermsRequired, nil)
+		return auth, responseData{}, challenge.operationError(loginRepairDiagnostic(challenge, widget), ErrTermsRequired, nil)
 	}
 	// Copy IDMSA's accepted headers, not the earlier request's headers.
 	auth.SCNT = challenge.header.Get("scnt")
