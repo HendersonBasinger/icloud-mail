@@ -74,8 +74,16 @@ func loginRepairDiagnostic(response responseData, widget string) string {
 		location = "missing"
 	case err != nil:
 		location = "malformed"
-	case u.Scheme != "https" || u.User != nil || u.Fragment != "" || u.RawPath != "":
-		location = "url_shape"
+	case u.Scheme == "" && u.Host == "":
+		location = "relative_url"
+	case u.Scheme != "https":
+		location = "scheme"
+	case u.User != nil:
+		location = "userinfo"
+	case u.Fragment != "":
+		location = "fragment"
+	case u.RawPath != "":
+		location = "rawpath"
 	case u.Host != "appleid.apple.com":
 		location = "host"
 	case u.Path != "/widget/account/repair":

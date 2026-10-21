@@ -120,7 +120,11 @@ func TestLoginRepairDiagnosticExcludesResponseMaterial(t *testing.T) {
 		{"query", base + "&secret=private-value", "query_extra"},
 		{"widget", strings.Replace(base, accountWidget, "private-value", 1), "widget"},
 		{"rv", strings.Replace(base, "rv=11", "rv=private-value", 1), "rv"},
-		{"userinfo", "https://private-value@appleid.apple.com/widget/account/repair", "url_shape"},
+		{"userinfo", "https://private-value@appleid.apple.com/widget/account/repair", "userinfo"},
+		{"relative", "/widget/account/repair?secret=private-value", "relative_url"},
+		{"scheme", "http://appleid.apple.com/widget/account/repair", "scheme"},
+		{"fragment", base + "#private-value", "fragment"},
+		{"escaped path", strings.Replace(base, "/widget/", "/%77idget/", 1), "rawpath"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := make(http.Header)
