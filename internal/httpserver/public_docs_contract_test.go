@@ -19,7 +19,7 @@ func TestPublicDocsCoversCurrentPickupPoolAndRetirement(t *testing.T) {
 	}
 	body := response.Body.String()
 	for _, contract := range []string{
-		"2026-10-16-mail-archive-upgrade", "v0.2.6", "ICLOUD_API_OTP_RETURN_LATEST_ONLY", "/api/v1/pool/claim",
+		"2026-10-21-apple-login-repair", "v0.2.7", "ICLOUD_API_OTP_RETURN_LATEST_ONLY", "/api/v1/pool/claim",
 		"/leases/LEASE_ID/commit", "wait_seconds=15", "LEASE_CLOSED", "root+tag",
 		"/aliases/batch/jobs/OPERATION_ID/reconcile", "X-CSRF-Token", "IDEMPOTENCY_CONFLICT",
 		"resume=false", "APPLE_DELETE_UNCERTAIN", "retiring", "retired", "IMAP 网络读取可并行",
