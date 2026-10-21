@@ -12,6 +12,7 @@
 /.idea/
 /.vscode/
 /.env
+/*.har
 /.env.*
 !/.env.example
 /.cache/

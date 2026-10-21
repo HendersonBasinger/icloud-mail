@@ -141,6 +141,16 @@ func accountHeaders(s AccountSession, auth bool) http.Header {
 // Failed management responses do not overwrite a usable SCNT or cookie jar.
 // Redirects never forward authentication material to a different endpoint.
 func (c *Client) accountCall(ctx context.Context, s *AccountSession, method, rawURL string, payload any, headers http.Header, allowConflict bool) (responseData, error) {
+	return c.accountCallPolicy(ctx, s, method, rawURL, payload, headers, allowConflict, false)
+}
+
+// Only explicit login steps may accept a repair checkpoint. Management failures
+// continue to leave the last accepted session untouched.
+func (c *Client) accountLoginCall(ctx context.Context, s *AccountSession, path string, payload any, headers http.Header, allowConflict bool) (responseData, error) {
+	return c.accountCallPolicy(ctx, s, http.MethodPost, accountAuth+path, payload, headers, allowConflict, true)
+}
+
+func (c *Client) accountCallPolicy(ctx context.Context, s *AccountSession, method, rawURL string, payload any, headers http.Header, allowConflict, allowRepair bool) (responseData, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" || (u.Host != "idmsa.apple.com" && u.Host != "appleid.apple.com" && u.Host != "account.apple.com") {
 		return responseData{}, operationError("account URL", ErrInvalidConfig, 0, nil)
@@ -179,7 +189,13 @@ func (c *Client) accountCall(ctx context.Context, s *AccountSession, method, raw
 	if int64(len(r.body)) > c.maxResponseBytes {
 		return r, r.operationError("account response", ErrResponseTooLarge, nil)
 	}
-	accepted := r.status >= 200 && r.status < 300 || allowConflict && r.status == 409
+	_, repair := loginRepairLocation(r, headers.Get("X-Apple-Widget-Key"))
+	repair = allowRepair && repair && method == http.MethodPost &&
+		(u.Path == "/appleauth/auth/signin/complete" || u.Path == "/appleauth/auth/verify/trusteddevice/securitycode")
+	if repair && u.Path == "/appleauth/auth/verify/trusteddevice/securitycode" {
+		repair = repairCodeWasAccepted(r)
+	}
+	accepted := r.status >= 200 && r.status < 300 || allowConflict && r.status == 409 || repair
 	if !accepted {
 		kind := ErrService
 		if r.status == 419 || r.status == 401 || r.status == 403 {
@@ -190,7 +206,7 @@ func (c *Client) accountCall(ctx context.Context, s *AccountSession, method, raw
 		}
 		return r, accountResponseError(r, kind)
 	}
-	if r.status != 409 {
+	if r.status != 409 && !repair {
 		var envelope struct {
 			ErrorCode     json.RawMessage   `json:"errorCode"`
 			ServiceErrors []json.RawMessage `json:"serviceErrors"`
@@ -473,7 +489,7 @@ func (c *Client) SignInAccount(ctx context.Context, appleID, password string, re
 	if s.TrustToken != "" {
 		trustTokens = append(trustTokens, s.TrustToken)
 	}
-	r, err = c.accountCall(ctx, &s, http.MethodPost, accountAuth+"/signin/complete?isRememberMeEnabled=true", map[string]any{"accountName": s.AppleID, "m1": base64.StdEncoding.EncodeToString(srp.m1), "m2": base64.StdEncoding.EncodeToString(srp.m2), "c": init.C, "rememberMe": true, "trustTokens": trustTokens}, h, true)
+	r, err = c.accountLoginCall(ctx, &s, "/signin/complete?isRememberMeEnabled=true", map[string]any{"accountName": s.AppleID, "m1": base64.StdEncoding.EncodeToString(srp.m1), "m2": base64.StdEncoding.EncodeToString(srp.m2), "c": init.C, "rememberMe": true, "trustTokens": trustTokens}, h, true)
 	if err != nil {
 		if r.status == 401 || r.status == 403 {
 			return s, false, accountResponseError(r, ErrAuthentication)
@@ -487,6 +503,15 @@ func (c *Client) SignInAccount(ctx context.Context, appleID, password string, re
 		h.Del("Content-Type")
 		_, _ = c.accountCall(ctx, &s, http.MethodGet, accountAuth, nil, h, false)
 		return s, true, nil
+	}
+	if r.status == http.StatusPreconditionFailed {
+		s, _, err = c.repairPhoneRequirement(ctx, s, r, accountHeaders(s, true))
+		if err != nil {
+			return s, false, err
+		}
+		if err = c.trustAccountSession(ctx, &s); err != nil {
+			return s, false, err
+		}
 	}
 	if s.SCNT == "" {
 		s.SCNT = manageSCNT
@@ -506,18 +531,34 @@ func (c *Client) VerifyAccountCode(ctx context.Context, s AccountSession, code s
 	h.Set("Accept", "application/json, text/plain, */*")
 	h.Set("X-Apple-App-Id", accountWidget)
 	h.Del("X-Requested-With")
-	r, err := c.accountCall(ctx, &s, http.MethodPost, accountAuth+"/verify/trusteddevice/securitycode", map[string]any{"securityCode": map[string]string{"code": code}}, h, false)
+	r, err := c.accountLoginCall(ctx, &s, "/verify/trusteddevice/securitycode", map[string]any{"securityCode": map[string]string{"code": code}}, h, false)
 	if err != nil {
 		if r.status == 400 || r.status == 401 || r.status == 403 || r.status == 409 || r.status == 422 {
 			return s, accountResponseError(r, ErrTwoFactorCode)
 		}
 		return s, err
 	}
-	response, trustErr := c.accountCall(ctx, &s, http.MethodGet, accountAuth+"/2sv/trust", nil, accountHeaders(s, true), false)
-	if trustErr != nil {
-		return s, &Error{Op: "trust Apple Account session", Kind: ErrService, StatusCode: response.status, Retryable: response.status >= 500}
+	if r.status == http.StatusPreconditionFailed {
+		if !repairCodeWasAccepted(r) {
+			return s, r.operationError("verify Apple Account code", ErrTermsRequired, nil)
+		}
+		s, _, err = c.repairPhoneRequirement(ctx, s, r, accountHeaders(s, true))
+		if err != nil {
+			return s, err
+		}
+	}
+	if err = c.trustAccountSession(ctx, &s); err != nil {
+		return s, err
 	}
 	return c.RefreshAccountSession(ctx, s)
+}
+
+func (c *Client) trustAccountSession(ctx context.Context, s *AccountSession) error {
+	response, trustErr := c.accountCall(ctx, s, http.MethodGet, accountAuth+"/2sv/trust", nil, accountHeaders(*s, true), false)
+	if trustErr != nil {
+		return &Error{Op: "trust Apple Account session", Kind: ErrService, StatusCode: response.status, Retryable: response.status >= 500, RetryAfter: parseRetryAfter(response.header.Get("Retry-After"), time.Now())}
+	}
+	return nil
 }
 
 func (c *Client) CreateAccountAlias(ctx context.Context, s AccountSession, label, note string) (Alias, AccountSession, error) {

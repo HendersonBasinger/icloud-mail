@@ -109,6 +109,8 @@ docker compose -f compose.yaml -f compose.build.yaml up -d --build --wait
 
 [自动创建与通道恢复](docs/AUTO_CREATION_CHANNELS.md)
 
+[Apple 登录的手机号补充与设备信任](docs/APPLE-LOGIN-REPAIR.md)
+
 每个部署的 `/docs/` 提供随服务版本更新的公开接入说明；对应源码见 [内置接口文档](internal/httpserver/docs.html)。
 
 ## 来源与许可

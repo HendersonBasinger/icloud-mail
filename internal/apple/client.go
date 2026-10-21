@@ -248,7 +248,14 @@ func (c *Client) VerifyCode(ctx context.Context, session Session, code string) (
 		return result, err
 	}
 	acceptedConflict := response.status == http.StatusConflict && response.header.Get("X-Apple-Session-Token") != ""
-	if response.status != http.StatusOK && response.status != http.StatusNoContent && !acceptedConflict {
+	if response.status == http.StatusPreconditionFailed {
+		if !repairCodeWasAccepted(response) {
+			return result, response.operationError("verify two-factor code", ErrTermsRequired, nil)
+		}
+		if err := op.repairPhoneRequirement(ctx, response); err != nil {
+			return result, err
+		}
+	} else if response.status != http.StatusOK && response.status != http.StatusNoContent && !acceptedConflict {
 		kind := ErrService
 		if response.status == http.StatusBadRequest || response.status == http.StatusUnauthorized || response.status == http.StatusForbidden || response.status == http.StatusConflict || response.status == http.StatusUnprocessableEntity {
 			kind = ErrTwoFactorCode
@@ -1039,7 +1046,13 @@ func (op *operation) srpComplete(ctx context.Context, appleID, challenge string,
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return 0, response.operationError("complete SRP sign in", ErrAuthentication, nil)
 	case http.StatusPreconditionFailed:
-		return 0, response.operationError("complete SRP sign in", ErrTermsRequired, nil)
+		if err := op.repairPhoneRequirement(ctx, response); err != nil {
+			return 0, err
+		}
+		if err := op.trust(ctx); err != nil {
+			return 0, err
+		}
+		return http.StatusOK, nil
 	default:
 		return 0, response.operationError("complete SRP sign in", ErrService, nil)
 	}
@@ -1094,6 +1107,9 @@ func (op *operation) accountLogin(ctx context.Context) (accountResponse, error) 
 		account, err := decodeAccountResponse(response.body)
 		if err != nil {
 			return accountResponse{}, response.operationError("decode Apple account", ErrInvalidResponse, err)
+		}
+		if account.TermsUpdateNeeded || account.IsRepairNeeded {
+			return accountResponse{}, response.operationError("exchange Apple session token", ErrTermsRequired, nil)
 		}
 		return account, nil
 	}

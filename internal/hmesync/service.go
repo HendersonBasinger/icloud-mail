@@ -180,7 +180,11 @@ func (s *Service) StartAuth(
 	session, needsVerification, err := s.client.SignIn(ctx, appleID, password, region, previous)
 	password = ""
 	if err != nil {
-		return AuthResult{}, mapAppleError(err, false)
+		mapped := mapAppleError(err, false)
+		if checkpointErr := s.preserveFailedWebTrust(ctx, accountID, identityOf(account), appleID, region, session); checkpointErr != nil {
+			mapped = errors.Join(mapped, fmt.Errorf("save Apple browser trust checkpoint: %w", checkpointErr))
+		}
+		return AuthResult{}, mapped
 	}
 	normalizeSession(&session, appleID, region, s.now())
 
@@ -249,6 +253,9 @@ func (s *Service) VerifyAuth(
 			s.recordFailedAttempt(flow)
 		} else {
 			s.deleteChallenge(challengeID)
+		}
+		if checkpointErr := s.preserveFailedWebTrust(ctx, accountID, flow.identity, flow.appleID, flow.region, session); checkpointErr != nil {
+			mapped = errors.Join(mapped, fmt.Errorf("save Apple browser trust checkpoint: %w", checkpointErr))
 		}
 		return AuthResult{}, mapped
 	}

@@ -115,6 +115,8 @@ type accountResponse struct {
 	Webservices          map[string]webservice `json:"webservices"`
 	HSAChallengeRequired bool                  `json:"hsaChallengeRequired"`
 	HSATrustedBrowser    bool                  `json:"hsaTrustedBrowser"`
+	TermsUpdateNeeded    bool                  `json:"termsUpdateNeeded"`
+	IsRepairNeeded       bool                  `json:"isRepairNeeded"`
 }
 
 type dsInfo struct {
