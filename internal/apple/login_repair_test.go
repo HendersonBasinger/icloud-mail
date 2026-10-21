@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -143,6 +144,50 @@ func TestLoginRepairDiagnosticExcludesResponseMaterial(t *testing.T) {
 			want := "Apple login repair gate: headers=1110 location=" + tc.classification + " code_accepted=true"
 			if got := loginRepairDiagnostic(r, accountWidget); got != want {
 				t.Fatalf("diagnostic contained unexpected material: %q", got)
+			}
+		})
+	}
+}
+
+func TestRepairWidgetMigrationRedirectIsNarrowAndStripsHeaders(t *testing.T) {
+	base := "https://appleid.apple.com/widget/account/repair?widgetKey=" + accountWidget + "&rv=11"
+	target := strings.Replace(base, "appleid.apple.com", "account.apple.com", 1)
+	for _, tc := range []struct {
+		name, from, to, method string
+		count                  int
+		want                   bool
+	}{
+		{"migration", base, target + "#fixture", "GET", 1, true},
+		{"other host", base, strings.Replace(target, "account.apple.com", "example.invalid", 1), "GET", 1, false},
+		{"lookalike host", base, strings.Replace(target, "account.apple.com", "account.apple.com.example", 1), "GET", 1, false},
+		{"other path", base, strings.Replace(target, "/widget/account/repair", "/account/manage", 1), "GET", 1, false},
+		{"other query", base, target + "&next=fixture", "GET", 1, false},
+		{"http", base, strings.Replace(target, "https:", "http:", 1), "GET", 1, false},
+		{"userinfo", base, strings.Replace(target, "account.apple.com", "fixture@account.apple.com", 1), "GET", 1, false},
+		{"port", base, strings.Replace(target, "account.apple.com", "account.apple.com:443", 1), "GET", 1, false},
+		{"post", base, target, "POST", 1, false},
+		{"loop", base, target, "GET", 2, false},
+		{"auth route", "https://idmsa.apple.com/appleauth/auth/repair/complete", target, "GET", 1, false},
+		{"management route", "https://appleid.apple.com/account/manage", "https://account.apple.com/account/manage", "GET", 1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fromURL, _ := url.Parse(tc.from)
+			toURL, _ := url.Parse(tc.to)
+			from := &http.Request{Method: tc.method, URL: fromURL, Header: make(http.Header)}
+			from.Header.Set("Accept", "text/html")
+			from.Header.Set("scnt", "private-checkpoint")
+			from.Header.Set("Cookie", "private-checkpoint")
+			to := &http.Request{Method: tc.method, URL: toURL, Header: from.Header.Clone()}
+			via := make([]*http.Request, tc.count)
+			for i := range via {
+				via[i] = from
+			}
+			err := checkRepairWidgetRedirect(to, via)
+			if (err == nil) != tc.want {
+				t.Fatalf("redirect accepted = %v, want %v", err == nil, tc.want)
+			}
+			if tc.want && (to.Header.Get("scnt") != "" || to.Header.Get("Cookie") != "" || to.Header.Get("Accept") != "text/html" || to.URL.Fragment != "") {
+				t.Fatal("migration leaked headers or lost public navigation state")
 			}
 		})
 	}

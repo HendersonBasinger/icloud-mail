@@ -59,6 +59,34 @@ func repairCodeWasAccepted(response responseData) bool {
 	return json.Unmarshal(response.body, &body) == nil && body.SecurityCode.Valid
 }
 
+// The legacy public widget now migrates to account.apple.com. Permit that
+// single bodyless navigation only; authentication and API redirects stay errors.
+func checkRepairWidgetRedirect(next *http.Request, via []*http.Request) error {
+	if len(via) != 1 || via[0].Method != http.MethodGet || next.Method != http.MethodGet {
+		return http.ErrUseLastResponse
+	}
+	from, to := via[0].URL, next.URL
+	if from.Scheme != "https" || from.Host != "appleid.apple.com" || from.User != nil || from.Path != "/widget/account/repair" || from.RawPath != "" ||
+		to.Scheme != "https" || to.Host != "account.apple.com" || to.User != nil || to.Path != from.Path || to.RawPath != "" {
+		return http.ErrUseLastResponse
+	}
+	fromQuery, fromErr := url.ParseQuery(from.RawQuery)
+	toQuery, toErr := url.ParseQuery(to.RawQuery)
+	if fromErr != nil || toErr != nil || fromQuery.Encode() != toQuery.Encode() {
+		return http.ErrUseLastResponse
+	}
+	to.Fragment, to.RawFragment = "", ""
+	// Only public navigation headers cross hosts. The client's isolated jar
+	// supplies cookies according to the destination's domain and path.
+	next.Header = make(http.Header)
+	for _, name := range []string{"Accept", "User-Agent", "Referer"} {
+		if value := via[0].Header.Get(name); value != "" {
+			next.Header.Set(name, value)
+		}
+	}
+	return nil
+}
+
 // Only fixed categories and presence flags may reach the operation log. Never
 // include a Location, header value, query key supplied by Apple, or body text.
 func loginRepairDiagnostic(response responseData, widget string) string {

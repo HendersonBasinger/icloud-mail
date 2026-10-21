@@ -83,7 +83,7 @@ func (f *repairIntegrationFixture) challenge() *http.Response {
 		location = strings.Replace(location, "/widget/account/repair", "/widget/account/other", 1)
 	case "invalid-code":
 		r.Body = io.NopCloser(strings.NewReader(`{"securityCode":{"valid":false}}`))
-	case "fragment":
+	case "fragment", "fragment-redirect":
 		location += "#%2FphoneNumber%3Fstate%3Dfixture"
 	}
 	r.Header.Set("Location", location)
@@ -119,7 +119,19 @@ func (f *repairIntegrationFixture) RoundTrip(r *http.Request) (*http.Response, e
 		if r.URL.Fragment != "" || r.URL.RawFragment != "" {
 			f.t.Fatal("browser fragment reached the widget HTTP request")
 		}
-		if r.Method != http.MethodGet || r.URL.Host != "appleid.apple.com" || r.URL.Query().Get("widgetKey") != f.widget() {
+		expectedHost := "appleid.apple.com"
+		if f.mode == "fragment-redirect" {
+			if r.URL.Host == "appleid.apple.com" {
+				redirect := f.response(http.StatusFound, "")
+				redirect.Header.Set("Location", "https://account.apple.com/widget/account/repair?"+r.URL.RawQuery+"#fixture")
+				redirect.Header.Add("Set-Cookie", "repair_migrated=fixture; Domain=.apple.com; Path=/; Secure; HttpOnly")
+				return redirect, nil
+			}
+			expectedHost = "account.apple.com"
+			f.requireCookie(r, "repair_migrated")
+			f.requireHeader(r, "Referer", "https://idmsa.apple.com/")
+		}
+		if r.Method != http.MethodGet || r.URL.Host != expectedHost || r.URL.Query().Get("widgetKey") != f.widget() {
 			f.t.Fatal("repair navigation did not preserve its validated widget")
 		}
 		if r.Header.Get("scnt") != "" || r.Header.Get("X-Apple-ID-Session-Id") != "" || r.Header.Get("X-Apple-Repair-Session-Token") != "" {
@@ -380,22 +392,27 @@ func TestLoginRepairFourEntryPointsKeepWidgetStateSeparate(t *testing.T) {
 
 func TestLoginRepairFragmentContinuesAllFourEntryPoints(t *testing.T) {
 	for _, entry := range []string{"SignIn", "SignInAccount", "VerifyCode", "VerifyAccountCode"} {
-		t.Run(entry, func(t *testing.T) {
-			f, _, _, err := runRepairIntegrationEntry(t, entry, "fragment")
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := []string{
-				"GET /widget/account/repair",
-				"GET /account/manage/repair/options []",
-				`GET /account/manage/repair/options ["phoneNumber"]`,
-				"POST /appleauth/auth/repair/complete",
-				"GET /appleauth/auth/2sv/trust",
-			}
-			if len(f.steps) < len(want) || !reflect.DeepEqual(f.steps[:len(want)], want) || f.optionsCalls != 2 || f.completeCalls != 1 || f.trustCalls != 1 || f.exchangeCalls != 1 {
-				t.Fatalf("fragment did not complete repair, trust and session exchange: %v", f.steps)
-			}
-		})
+		for _, mode := range []string{"fragment", "fragment-redirect"} {
+			t.Run(entry+"/"+mode, func(t *testing.T) {
+				f, _, _, err := runRepairIntegrationEntry(t, entry, mode)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := []string{
+					"GET /widget/account/repair",
+					"GET /account/manage/repair/options []",
+					`GET /account/manage/repair/options ["phoneNumber"]`,
+					"POST /appleauth/auth/repair/complete",
+					"GET /appleauth/auth/2sv/trust",
+				}
+				if mode == "fragment-redirect" {
+					want = append([]string{"GET /widget/account/repair"}, want...)
+				}
+				if len(f.steps) < len(want) || !reflect.DeepEqual(f.steps[:len(want)], want) || f.optionsCalls != 2 || f.completeCalls != 1 || f.trustCalls != 1 || f.exchangeCalls != 1 {
+					t.Fatalf("fragment did not complete repair, trust and session exchange: %v", f.steps)
+				}
+			})
+		}
 	}
 }
 
