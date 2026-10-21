@@ -96,6 +96,11 @@ func (f *repairIntegrationFixture) RoundTrip(r *http.Request) (*http.Response, e
 	trigger := path == "/appleauth/auth/signin/complete" && f.signIn() ||
 		path == "/appleauth/auth/verify/trusteddevice/securitycode" && !f.signIn() && r.Method == http.MethodPost
 	if trigger {
+		domain := "3"
+		if f.account() {
+			domain = "11"
+		}
+		f.requireHeader(r, "X-Apple-Domain-Id", domain)
 		f.active = true
 		if f.mode != "normal" {
 			return f.challenge(), nil

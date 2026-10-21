@@ -1161,6 +1161,7 @@ func (op *operation) authHeaders() http.Header {
 	headers.Set("Referer", origin+"/")
 	headers.Set("User-Agent", userAgent)
 	headers.Set("X-Apple-Widget-Key", defaultWidgetKey)
+	headers.Set("X-Apple-Domain-Id", "3")
 	headers.Set("X-Apple-OAuth-Client-Id", defaultWidgetKey)
 	headers.Set("X-Apple-OAuth-Client-Type", "firstPartyAuth")
 	headers.Set("X-Apple-OAuth-Redirect-URI", op.endpoints.Home)
