@@ -5,6 +5,7 @@
 ## 处理范围
 
 - 登录提交或验证码验证返回 HTTP 412，且携带当前登录所需的完整 repair 上下文与合法 widget 地址，才进入修复检查。验证码分支还须明确返回 `securityCode.valid=true`，不会重复提交已通过的验证码。
+- 修复页跳转地址可以包含浏览器页面片段（`#...`）；发送请求前移除该片段，仍严格校验 HTTPS、固定 Apple 域名、widget 路径及当前登录参数，避免把有效修复流程误判为其他账户待办。
 - 仅读取固定 Apple repair widget 的 JSON 引导数据，不执行页面脚本，不下载 JS/CSS。
 - 读取 options 后，只有 `phone_number_requirement`、明确允许跳过、待办仅为手机号及手机号验证，且没有密码、条款或隐私同意等其他待办，才发送一次 `X-Apple-Skip-Repair-Attributes: ["phoneNumber"]`。
 - 收到明确完成状态后，提交一次 `/appleauth/auth/repair/complete`。认证上下文与 widget 上下文分别维护，完成请求恢复原认证 SCNT/Session ID，并携带最新 repair token。

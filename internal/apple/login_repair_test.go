@@ -83,14 +83,21 @@ func TestLoginRepairLocationIsPinnedToCurrentWidget(t *testing.T) {
 		{"other widget", strings.Replace(base, accountWidget, defaultWidgetKey, 1), false},
 		{"other domain id", strings.Replace(base, "rv=11", "rv=3", 1), false},
 		{"duplicate widget", base + "&widgetKey=" + accountWidget, false},
-		{"fragment", base + "#other", false},
+		{"fragment", base + "#other", true},
+		{"encoded fragment", base + "#%2FphoneNumber%3Fstate%3Dfixture", true},
+		{"foreign host with fragment", strings.Replace(base, "appleid.apple.com", "elsewhere.example", 1) + "#other", false},
+		{"other widget with fragment", strings.Replace(base, accountWidget, defaultWidgetKey, 1) + "#other", false},
 		{"unknown query", base + "&next=https://elsewhere.example", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			headers := h.Clone()
 			headers.Set("Location", tc.url)
-			if _, ok := loginRepairLocation(responseData{status: 412, header: headers}, accountWidget); ok != tc.want {
+			u, ok := loginRepairLocation(responseData{status: 412, header: headers}, accountWidget)
+			if ok != tc.want {
 				t.Fatalf("accepted = %v, want %v", ok, tc.want)
+			}
+			if ok && (u.Fragment != "" || u.RawFragment != "") {
+				t.Fatal("repair navigation retained a browser-only fragment")
 			}
 		})
 	}
@@ -123,7 +130,7 @@ func TestLoginRepairDiagnosticExcludesResponseMaterial(t *testing.T) {
 		{"userinfo", "https://private-value@appleid.apple.com/widget/account/repair", "userinfo"},
 		{"relative", "/widget/account/repair?secret=private-value", "relative_url"},
 		{"scheme", "http://appleid.apple.com/widget/account/repair", "scheme"},
-		{"fragment", base + "#private-value", "fragment"},
+		{"fragment", base + "#private-value", "accepted"},
 		{"escaped path", strings.Replace(base, "/widget/", "/%77idget/", 1), "rawpath"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

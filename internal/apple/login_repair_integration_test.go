@@ -83,6 +83,8 @@ func (f *repairIntegrationFixture) challenge() *http.Response {
 		location = strings.Replace(location, "/widget/account/repair", "/widget/account/other", 1)
 	case "invalid-code":
 		r.Body = io.NopCloser(strings.NewReader(`{"securityCode":{"valid":false}}`))
+	case "fragment":
+		location += "#%2FphoneNumber%3Fstate%3Dfixture"
 	}
 	r.Header.Set("Location", location)
 	r.Header.Add("Set-Cookie", "repair_challenge=fixture; Domain=.apple.com; Path=/; Secure; HttpOnly")
@@ -114,6 +116,9 @@ func (f *repairIntegrationFixture) RoundTrip(r *http.Request) (*http.Response, e
 	}
 	switch path {
 	case "/widget/account/repair":
+		if r.URL.Fragment != "" || r.URL.RawFragment != "" {
+			f.t.Fatal("browser fragment reached the widget HTTP request")
+		}
 		if r.Method != http.MethodGet || r.URL.Host != "appleid.apple.com" || r.URL.Query().Get("widgetKey") != f.widget() {
 			f.t.Fatal("repair navigation did not preserve its validated widget")
 		}
@@ -368,6 +373,27 @@ func TestLoginRepairFourEntryPointsKeepWidgetStateSeparate(t *testing.T) {
 				if !found[name] {
 					t.Fatalf("JSON round trip lost synthetic cookie %s", name)
 				}
+			}
+		})
+	}
+}
+
+func TestLoginRepairFragmentContinuesAllFourEntryPoints(t *testing.T) {
+	for _, entry := range []string{"SignIn", "SignInAccount", "VerifyCode", "VerifyAccountCode"} {
+		t.Run(entry, func(t *testing.T) {
+			f, _, _, err := runRepairIntegrationEntry(t, entry, "fragment")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{
+				"GET /widget/account/repair",
+				"GET /account/manage/repair/options []",
+				`GET /account/manage/repair/options ["phoneNumber"]`,
+				"POST /appleauth/auth/repair/complete",
+				"GET /appleauth/auth/2sv/trust",
+			}
+			if len(f.steps) < len(want) || !reflect.DeepEqual(f.steps[:len(want)], want) || f.optionsCalls != 2 || f.completeCalls != 1 || f.trustCalls != 1 || f.exchangeCalls != 1 {
+				t.Fatalf("fragment did not complete repair, trust and session exchange: %v", f.steps)
 			}
 		})
 	}

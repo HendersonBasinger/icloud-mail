@@ -25,9 +25,12 @@ func loginRepairLocation(response responseData, widget string) (*url.URL, bool) 
 		}
 	}
 	u, err := url.Parse(response.header.Get("Location"))
-	if err != nil || u.Scheme != "https" || u.Host != "appleid.apple.com" || u.User != nil || u.Fragment != "" || u.Path != "/widget/account/repair" || u.RawPath != "" {
+	if err != nil || u.Scheme != "https" || u.Host != "appleid.apple.com" || u.User != nil || u.Path != "/widget/account/repair" || u.RawPath != "" {
 		return nil, false
 	}
+	// Apple may include browser navigation state after '#'. It is not part
+	// of the HTTP target; keep it out of both the request and session state.
+	u.Fragment, u.RawFragment = "", ""
 	q, err := url.ParseQuery(u.RawQuery)
 	if err != nil || len(q["widgetKey"]) != 1 || q.Get("widgetKey") != widget || len(q["rv"]) != 1 {
 		return nil, false
@@ -80,8 +83,6 @@ func loginRepairDiagnostic(response responseData, widget string) string {
 		location = "scheme"
 	case u.User != nil:
 		location = "userinfo"
-	case u.Fragment != "":
-		location = "fragment"
 	case u.RawPath != "":
 		location = "rawpath"
 	case u.Host != "appleid.apple.com":
