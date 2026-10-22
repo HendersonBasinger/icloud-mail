@@ -28,6 +28,17 @@ body,
   margin: 0;
 }
 
+@supports (scrollbar-gutter: stable) {
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  /* The root gutter already reserves the scrollbar; avoid compensating twice. */
+  body.el-popup-parent--hidden {
+    width: 100% !important;
+  }
+}
+
 body {
   min-height: 100vh;
   min-height: 100dvh;
