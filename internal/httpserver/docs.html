@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="icloud-docs-revision" content="2026-10-21-apple-login-repair">
+  <meta name="icloud-docs-revision" content="2026-10-22-automatic-login-events">
   <title>iCloud Mail · 接口与接入说明</title>
   <style>
     :root{color-scheme:light dark;font:16px/1.7 system-ui,sans-serif;--bg:#f5f5f7;--surface:#fff;--text:#1d1d1f;--muted:#62626a;--line:#d8d8df;--accent:#0066cc}*{box-sizing:border-box}body{max-width:1000px;margin:0 auto;padding:40px 24px 80px;background:var(--bg);color:var(--text)}h1,h2,h3{line-height:1.3}h1{font-size:32px}h2{font-size:24px;margin-top:0}h3{font-size:18px}a{color:var(--accent)}header p,footer{color:var(--muted)}nav{display:flex;flex-wrap:wrap;gap:8px 20px;margin:24px 0}section{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:24px;margin:20px 0;scroll-margin-top:24px}code,pre{font-family:ui-monospace,monospace}code{overflow-wrap:anywhere}pre{padding:16px;border:1px solid var(--line);border-radius:10px;overflow:auto;background:var(--bg);font-size:13px;line-height:1.6}.note{padding:12px 16px;border-left:3px solid var(--accent);background:var(--bg)}.table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line);vertical-align:top}footer{font-size:14px}@media(prefers-color-scheme:dark){:root{--bg:#161618;--surface:#222225;--text:#f5f5f7;--muted:#b0b0b8;--line:#44444a;--accent:#70b7ff}}@media(max-width:600px){body{padding:24px 14px 48px}section{padding:18px}h1{font-size:27px}}
@@ -12,10 +12,10 @@
 <body>
   <header>
     <h1>iCloud Mail · 接口与接入说明</h1>
-    <p>文档更新：2026-10-21 · v0.2.7。涵盖独立邮箱取码、项目邮箱池、已使用邮箱退役、按需收件与自动创建。HOST、ADMIN_PATH 和凭据均为示例占位符。</p>
+    <p>文档更新：2026-10-22 · v0.2.8。涵盖独立邮箱取码、项目邮箱池、已使用邮箱退役、按需收件、自动创建与自动保活。HOST、ADMIN_PATH 和凭据均为示例占位符。</p>
   </header>
   <nav aria-label="文档目录">
-    <a href="#otp">直接取码</a><a href="#pool">邮箱池</a><a href="#retirement">已使用邮箱退役</a><a href="#receiving">收件与并行</a><a href="#limits">限流与重试</a><a href="#creation">自动创建</a><a href="#imaps">IMAPS / OAuth</a>
+    <a href="#otp">直接取码</a><a href="#pool">邮箱池</a><a href="#retirement">已使用邮箱退役</a><a href="#receiving">收件与并行</a><a href="#limits">限流与重试</a><a href="#creation">自动创建</a><a href="#auto-login">自动保活</a><a href="#imaps">IMAPS / OAuth</a>
   </nav>
 
   <section id="otp">
@@ -118,6 +118,14 @@ POST /ADMIN_PATH/api/v1/pool/aliases/batch/jobs/OPERATION_ID/reconcile</pre>
     <p>新通道创建、候选完成或详情读取被限流时，只冷却该通道，旧通道按原时间槽与独立额度继续。候选来源及完成 ID 持久保存，取得 ID 后只读取原详情；重复调度不会延长冷却，Apple 更长的 Retry-After 继续生效。目录暂时遗漏地址时可用原 ID 的详情精确核验；结果未知保留候选，历史来源不明项继续先核验原地址。公共会话或目录请求本身被限流时，仍暂停主号计划。</p>
     <p>旧通道目录失效时暂停远端创建，保留已开启计划；重新登录后继续。创建依赖旧通道目录确认归属和结果，新通道登录态仍需配合目录确认。手动关闭的计划保持关闭，历史关闭项不会在升级时批量重开。</p>
     <p class="note">次数是本地尝试上限，实际成功数仍取决于 Apple 响应、Retry-After、库存与容量。待确认地址继续核验原候选，未知结果不重复生成。此规则不承诺 Apple 会话长期有效。</p>
+  </section>
+
+  <section id="auto-login">
+    <h2>自动保活与过期重登</h2>
+    <p>在添加主号或编辑收件凭据时，可开启自动保活服务，填写 Apple 登录密码、双重验证接码链接及账户区域。默认关闭，只有启用的 iCloud 主号且主动打开该开关，才会自动重新登录新旧通道。</p>
+    <p>按明确会话失效、已知过期时间和配置变更触发，不每 30 秒扫描哪些通道需要重登。普通 429、创建配额和临时网络故障不会作为新重登理由；失败后间隔重试，遵守 Apple 的等待要求，重复事件不重置退避。密码错误或账户待办会暂停自动尝试，人工登录优先。</p>
+    <p>密码和接码链接加密保存、不回显，验证码不持久化。接码链接须能返回该主号的新验证码；关闭开关不强制填写凭据，编辑留空保留已存值。保持退出前请先关闭自动保活，否则退出事件仍可触发自动重新登录。</p>
+    <p class="note">这是过期后重新登录的补充，不表示新通道永久在线。Apple 管理连接与 IMAP App 专用密码独立，自动重登不会替换收件密码。备份和升级时保留数据库与原密钥。</p>
   </section>
 
   <section id="imaps">
