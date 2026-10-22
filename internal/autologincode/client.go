@@ -136,8 +136,11 @@ func dialPublic(ctx context.Context, network, address string, lookup func(contex
 		return nil, ErrUnavailable
 	}
 	// Reject mixed public/private DNS answers, not merely the first address.
-	for _, ip := range ips {
-		if !isPublicIP(ip) {
+	for index, ip := range ips {
+		// LookupNetIP wraps net.IP and can represent an ordinary A record as
+		// IPv4-mapped IPv6. Classify and pin its canonical IPv4 destination.
+		ips[index] = ip.Unmap()
+		if !isPublicIP(ips[index]) {
 			return nil, ErrInvalidURL
 		}
 	}

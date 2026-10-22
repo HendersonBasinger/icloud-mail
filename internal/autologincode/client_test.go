@@ -159,7 +159,8 @@ func TestPrivateLiteralDialNeverConnects(t *testing.T) {
 func TestDNSMixedAnswersAndPinnedDial(t *testing.T) {
 	for _, ips := range [][]netip.Addr{
 		{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("127.0.0.1")},
-		{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("::ffff:8.8.8.8")},
+		{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("::ffff:127.0.0.1")},
+		{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("::ffff:169.254.169.254")},
 	} {
 		called := false
 		_, err := dialPublic(context.Background(), "tcp", "provider.example:8818",
@@ -186,5 +187,30 @@ func TestDNSMixedAnswersAndPinnedDial(t *testing.T) {
 	)
 	if err != ErrUnavailable || lookups != 1 || dials != 1 {
 		t.Fatal("unexpected DNS/dial boundary")
+	}
+}
+
+func TestResolverMappedPublicIPv4IsCanonicalizedBeforeDial(t *testing.T) {
+	for _, input := range []string{"43.138.208.78", "137.131.2.92"} {
+		mapped, ok := netip.AddrFromSlice(net.ParseIP(input))
+		if !ok || !mapped.Is4In6() {
+			t.Fatal("fixture must reproduce net.Resolver.LookupNetIP representation")
+		}
+		called := false
+		_, err := dialPublic(context.Background(), "tcp", "provider.example:8818",
+			func(context.Context, string, string) ([]netip.Addr, error) {
+				return []netip.Addr{mapped}, nil
+			},
+			func(_ context.Context, network, address string) (net.Conn, error) {
+				called = true
+				if network != "tcp" || address != net.JoinHostPort(input, "8818") {
+					t.Fatal("mapped public A record was not pinned to canonical IPv4")
+				}
+				return nil, ErrUnavailable
+			},
+		)
+		if err != ErrUnavailable || !called {
+			t.Fatal("public A record was rejected before dial")
+		}
 	}
 }
