@@ -1,10 +1,12 @@
 <div align="center">
 
+**简体中文 | [English](README.en.md)**
+
 # iCloud Mail
 
 **把 iCloud 隐藏邮箱管理、邮件接收和 API 取码放进一个控制面板。**
 
-自托管 · 多主号 · 邮箱池 · 按需收件 · 深浅色主题 
+自托管 · 多主号 · 邮箱池 · 按需收件 · 深浅色主题
 
 **当前版本：v0.2.8**
 
@@ -162,4 +164,4 @@ curl -H 'Authorization: Bearer MAILBOX_API_KEY' \
 
 本项目在 [mangobubu/icloud-api](https://github.com/mangobubu/icloud-api) 的基础上持续开发，由 [t508708/icloud-mail](https://github.com/t508708/icloud-mail) 独立维护，保留上游来源与 Git 历史。感谢原作者及相关参考项目。
 
-**本项目维护者有权授权的原创增量采用 [MIT License](LICENSE)。** 上游目前未声明通用软件许可证；MIT 不覆盖上游已有代码、第三方代码及依赖，也不表示整个派生代码库已获统一 MIT 授权。各部分来源及许可范围见 [NOTICE.md](NOTICE.md)。
+MIT 许可文本见 [LICENSE](LICENSE)；适用范围、上游来源与第三方许可见 [NOTICE.md](NOTICE.md)。
