@@ -162,6 +162,8 @@ curl -H 'Authorization: Bearer MAILBOX_API_KEY' \
 
 ## 来源与许可
 
-本项目在 [mangobubu/icloud-api](https://github.com/mangobubu/icloud-api) 的基础上持续开发，由 [t508708/icloud-mail](https://github.com/t508708/icloud-mail) 独立维护，保留上游来源与 Git 历史。感谢原作者及相关参考项目。
-
 MIT 许可文本见 [LICENSE](LICENSE)；适用范围、上游来源与第三方许可见 [NOTICE.md](NOTICE.md)。
+
+<p align="right">
+  <sub>感谢原作者 <a href="https://github.com/mangobubu">mangobubu</a>。本项目基于 <a href="https://github.com/mangobubu/icloud-api">icloud-api</a> 持续开发，保留上游来源与 Git 历史。</sub>
+</p>

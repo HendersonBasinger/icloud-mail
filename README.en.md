@@ -163,6 +163,8 @@ Detailed documentation is currently in Chinese.
 
 ## Origin and Licensing
 
-Developed from [mangobubu/icloud-api](https://github.com/mangobubu/icloud-api), this project is independently maintained at [t508708/icloud-mail](https://github.com/t508708/icloud-mail), preserving upstream attribution and Git history. Thanks to the original author and related reference projects.
-
 See [LICENSE](LICENSE) for the MIT license text, and [NOTICE.md](NOTICE.md#english) for its scope, upstream attribution, and third-party licensing.
+
+<p align="right">
+  <sub>Thanks to the original author, <a href="https://github.com/mangobubu">mangobubu</a>. Developed from <a href="https://github.com/mangobubu/icloud-api">icloud-api</a>, with upstream attribution and Git history preserved.</sub>
+</p>
