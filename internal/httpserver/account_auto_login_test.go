@@ -23,6 +23,38 @@ const (
 	autoLoginAPITestCodeURL  = "https://auto-login-no-network.invalid/code?key=fixture-private-code-key"
 )
 
+type autoLoginAPINotifier struct {
+	HMESyncService
+	ids []int64
+}
+
+func (n *autoLoginAPINotifier) NotifyAutomaticLogin(id int64) { n.ids = append(n.ids, id) }
+
+func TestAdminAPIAccountAutoLoginNotifiesOnlyAfterAcceptedWrite(t *testing.T) {
+	env := newAdminAPITestEnv(t)
+	notifier := &autoLoginAPINotifier{}
+	env.server.SetHMESyncService(notifier)
+	cookie, csrf, _ := env.createSession(t, "auto-login-events-admin", "fixture-password")
+	account := autoLoginAPITestCreate(t, env, cookie, csrf, "auto-login-events@icloud.com", map[string]any{
+		"enabled": true, "region": "global", "password": autoLoginAPITestPassword, "code_url": autoLoginAPITestCodeURL,
+	})
+	if len(notifier.ids) != 1 || notifier.ids[0] != account.ID {
+		t.Fatal("created account did not publish its event")
+	}
+	response := autoLoginAPITestUpdate(t, env, cookie, csrf, account, map[string]any{"enabled": false})
+	if response.Code != http.StatusOK || len(notifier.ids) != 2 || notifier.ids[1] != account.ID {
+		t.Fatal("disabling automatic login did not publish its event")
+	}
+	response = autoLoginAPITestUpdate(t, env, cookie, "", account, map[string]any{"enabled": true})
+	if response.Code != http.StatusForbidden || len(notifier.ids) != 2 {
+		t.Fatal("rejected write published an automatic login event")
+	}
+	response = autoLoginAPITestUpdate(t, env, cookie, csrf, account, map[string]any{"enabled": true, "region": "invalid"})
+	if response.Code != http.StatusBadRequest || len(notifier.ids) != 2 {
+		t.Fatal("invalid configuration published an automatic login event")
+	}
+}
+
 func autoLoginAPITestAccountBody(email string, config map[string]any) map[string]any {
 	body := map[string]any{
 		"name": "Automatic login fixture", "email": email, "imap_username": email,

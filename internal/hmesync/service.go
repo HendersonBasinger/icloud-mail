@@ -110,6 +110,9 @@ type Service struct {
 	retirementReadCooldowns      map[int64]time.Time
 	autoLoginCodeFetcher         AutomaticLoginCodeFetcher
 	autoLoginWait                func(context.Context, time.Duration) error
+	autoLoginEventMu             sync.Mutex
+	autoLoginEvents              map[int64]struct{}
+	autoLoginWake                chan struct{}
 	authGenerations              map[int64]uint64
 }
 
@@ -1708,6 +1711,9 @@ func (s *Service) saveSession(ctx context.Context, accountID int64, session appl
 	})
 	if errors.Is(err, store.ErrICloudMailboxRequired) {
 		return domain.AppleWebSession{}, wrapError(CodeAccountChanged, ErrAccountChanged, err)
+	}
+	if err == nil {
+		s.NotifyAutomaticLogin(accountID)
 	}
 	return saved, err
 }

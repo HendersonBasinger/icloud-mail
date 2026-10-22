@@ -72,6 +72,9 @@ func (s *Service) preserveFailedWebTrust(ctx context.Context, id int64, expected
 			return err
 		}
 		_, err = s.repo.UpsertAppleWebSession(persistCtx, record)
+		if err == nil {
+			s.NotifyAutomaticLogin(id)
+		}
 		return err
 	})
 }
@@ -113,5 +116,8 @@ func (s *Service) expireWebSessionPreservingTrust(ctx context.Context, id int64)
 	}
 	record.Authenticated = false
 	_, err = s.repo.UpsertAppleWebSession(ctx, record)
+	if err == nil {
+		s.NotifyAutomaticLogin(id)
+	}
 	return err
 }

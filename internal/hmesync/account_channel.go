@@ -191,7 +191,7 @@ func (s *Service) keepAliveAccountSession(ctx context.Context, id int64, onlyDue
 		failed.RefreshFailures = min(failed.RefreshFailures+1, 6)
 		delay := min(time.Minute*time.Duration(1<<failed.RefreshFailures), 30*time.Minute)
 		failed.RefreshAfter = s.now().Add(max(delay, apple.RetryDelay(err)))
-		failed.RefreshRejected = errors.Is(err, apple.ErrInvalidSession)
+		failed.RefreshRejected = explicitWebFailure(err, apple.ErrInvalidSession)
 		failed.UpdatedAt = s.now()
 		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), autoCreatePersistTimeout)
 		defer cancel()
@@ -362,6 +362,7 @@ func (s *Service) ClearAccountAuth(ctx context.Context, id int64) error {
 		if err := repo.DeleteAppleAccountSession(ctx, id); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
+		s.NotifyAutomaticLogin(id)
 	}
 	_, web, err := s.loadSession(ctx, id)
 	if errors.Is(err, ErrLoginRequired) || errors.Is(err, store.ErrNotFound) {
@@ -453,7 +454,7 @@ func (s *Service) createRemoteAliasWithMode(ctx context.Context, id int64, web a
 			var managed apple.AccountSession
 			alias, managed, err = client.CreateAccountAlias(ctx, *web.Account, label, note)
 			web.Account = &managed
-			if errors.Is(err, apple.ErrInvalidSession) {
+			if explicitWebFailure(err, apple.ErrInvalidSession) {
 				// Keep Web authentication available for synchronization and OTP.
 				if managed.APIKey == "" {
 					managed = previous

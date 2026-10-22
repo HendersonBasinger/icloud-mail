@@ -120,6 +120,13 @@ func (s *Service) readAccountDirectoryForSync(ctx context.Context, account domai
 			return syncDirectory{}, err
 		}
 	}
+	if explicitWebFailure(readErr, apple.ErrInvalidSession) {
+		if !acceptedCheckpoint {
+			returned = *managed
+		}
+		returned.RefreshRejected, returned.UpdatedAt = true, s.now()
+		acceptedCheckpoint = true
+	}
 	if readErr == nil || acceptedCheckpoint {
 		// Accepted cookie/token rotations survive later read failures, including
 		// cancellation. The Account checkpoint never rewrites Web authentication.

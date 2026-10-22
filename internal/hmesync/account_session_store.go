@@ -108,6 +108,9 @@ func (s *Service) saveAccountManagementSession(ctx context.Context, id int64, ma
 		AccountID: id, Ciphertext: ciphertext, AppleID: managed.AppleID,
 		Region: publicRegion(string(region)), Authenticated: true, LastValidatedAt: &now,
 	})
+	if err == nil {
+		s.NotifyAutomaticLogin(id)
+	}
 	return err
 }
 
@@ -137,5 +140,9 @@ func (s *Service) deleteWebSessionPreservingAccount(ctx context.Context, id int6
 			}
 		}
 	}
-	return s.repo.DeleteAppleWebSession(ctx, id)
+	err := s.repo.DeleteAppleWebSession(ctx, id)
+	if err == nil || errors.Is(err, store.ErrNotFound) {
+		s.NotifyAutomaticLogin(id)
+	}
+	return err
 }

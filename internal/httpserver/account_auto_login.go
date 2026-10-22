@@ -38,6 +38,12 @@ func (s *Server) withAccountAutoLoginUpdateLock(ctx context.Context, id int64, u
 	})
 }
 
+func (s *Server) notifyAutomaticLogin(id int64) {
+	if service, ok := s.hmeSync.(interface{ NotifyAutomaticLogin(int64) }); ok {
+		service.NotifyAutomaticLogin(id)
+	}
+}
+
 func (s *Server) prepareAccountAutoLogin(ctx context.Context, input *adminAPIAutoLoginInput, account, previous domain.Account) (*domain.AccountAutoLoginConfig, string, error) {
 	if input == nil {
 		return nil, "", nil

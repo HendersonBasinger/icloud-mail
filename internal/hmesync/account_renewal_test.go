@@ -58,6 +58,42 @@ func TestAccountRenewalUsesTTLAndPersistsBackoff(t *testing.T) {
 	}
 }
 
+func TestAccountRenewalOnlyExplicitAuthenticationFailureRequiresLogin(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		upstream error
+		rejected bool
+	}{
+		{"authentication", &apple.Error{Kind: apple.ErrInvalidSession, StatusCode: 401}, true},
+		{"rate_limit", &apple.Error{Kind: apple.ErrService, StatusCode: 429}, false},
+		{"rate_limit_with_auth_marker", &apple.Error{Kind: apple.ErrInvalidSession, StatusCode: 429}, false},
+		{"service_with_auth_marker", &apple.Error{Kind: apple.ErrInvalidSession, StatusCode: 503}, false},
+		{"network", context.DeadlineExceeded, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s, _, account := independentAccountFixture(t, true)
+			now := time.Now().UTC()
+			s.now = func() time.Time { return now }
+			if err := s.saveAccountManagementSession(context.Background(), account.ID, apple.AccountSession{
+				AppleID: account.Email, Region: apple.RegionGlobal, APIKey: "fixture-key", SCNT: "fixture-scnt",
+				AuthenticatedAt: now, ExpiresAt: now.Add(time.Hour),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			s.client = &accountTestClient{accountRefresh: func(current apple.AccountSession) (apple.AccountSession, error) {
+				return current, test.upstream
+			}}
+			if err := s.KeepAliveAccountSession(context.Background(), account.ID); err == nil {
+				t.Fatal("expected fixture upstream failure")
+			}
+			stored, err := s.readAccountManagementSession(context.Background(), account.ID)
+			if err != nil || stored.RefreshRejected != test.rejected {
+				t.Fatalf("incorrect re-login eligibility: rejected=%v want=%v err=%v", stored.RefreshRejected, test.rejected, err)
+			}
+		})
+	}
+}
+
 func TestAccountRenewalKeepsAcceptedCheckpointWhenLaterRefreshStepFails(t *testing.T) {
 	s, _, account := independentAccountFixture(t, true)
 	ctx := context.Background()

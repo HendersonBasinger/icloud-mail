@@ -947,6 +947,7 @@ func (s *Server) adminAPICreateAccount(basePath string) gin.HandlerFunc {
 			s.writeAdminAPIInternalError(c, err)
 			return
 		}
+		s.notifyAutomaticLogin(created.ID)
 		session := mustSession(c)
 		s.audit(c, &session.AdminID, session.Username, "create", "account", strconv.FormatInt(created.ID, 10), "success", "")
 		c.Header("Location", fmt.Sprintf("%s/accounts/%d", basePath, created.ID))
@@ -1064,6 +1065,7 @@ func (s *Server) adminAPIUpdateAccount(c *gin.Context) {
 		writeAdminAPIError(c, http.StatusBadRequest, "VALIDATION_FAILED", validationMessage)
 		return
 	}
+	s.notifyAutomaticLogin(id)
 	session := mustSession(c)
 	s.audit(c, &session.AdminID, session.Username, "update", "account", strconv.FormatInt(id, 10), "success", "")
 	writeAdminAPIData(c, http.StatusOK, adminAPIAccountFromDomain(updated))

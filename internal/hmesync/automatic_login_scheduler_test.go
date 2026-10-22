@@ -18,16 +18,30 @@ import (
 
 type automaticSchedulerRepository struct {
 	*store.Store
-	lists chan struct{}
+	lists     chan struct{}
+	reads     chan int64
+	listCount atomic.Int32
+	readCount atomic.Int32
 }
 
 func (r *automaticSchedulerRepository) ListEnabledAccountAutoLoginConfigs(ctx context.Context) ([]domain.AccountAutoLoginConfig, error) {
+	r.listCount.Add(1)
 	configs, err := r.Store.ListEnabledAccountAutoLoginConfigs(ctx)
 	select {
 	case r.lists <- struct{}{}:
 	default:
 	}
 	return configs, err
+}
+
+func (r *automaticSchedulerRepository) GetAccountAutoLoginConfig(ctx context.Context, id int64) (domain.AccountAutoLoginConfig, error) {
+	r.readCount.Add(1)
+	config, err := r.Store.GetAccountAutoLoginConfig(ctx, id)
+	select {
+	case r.reads <- id:
+	default:
+	}
+	return config, err
 }
 
 type automaticSchedulerCodeFetcher struct {
@@ -76,6 +90,7 @@ func automaticSchedulerWait[T any](t *testing.T, events <-chan T, description st
 
 func automaticSchedulerStart(t *testing.T, service *Service, repo *automaticSchedulerRepository) chan<- time.Time {
 	t.Helper()
+	repo.reads = make(chan int64, 256)
 	ctx, cancel := context.WithCancel(context.Background())
 	ticks := make(chan time.Time)
 	done := make(chan struct{})
@@ -91,17 +106,32 @@ func automaticSchedulerStart(t *testing.T, service *Service, repo *automaticSche
 	return ticks
 }
 
-func automaticSchedulerTick(t *testing.T, ticks chan<- time.Time, repo *automaticSchedulerRepository, now time.Time) {
+func automaticSchedulerFlush(t *testing.T, service *Service, repo *automaticSchedulerRepository) {
+	t.Helper()
+	const barrierID = int64(1 << 60)
+	// A second event passes through the next select after the entire first
+	// coalesced batch, regardless of map iteration order within that batch.
+	for round := 0; round < 2; round++ {
+		service.NotifyAutomaticLogin(barrierID)
+		for automaticSchedulerWait(t, repo.reads, "account event barrier") != barrierID {
+		}
+	}
+}
+
+func automaticSchedulerTick(t *testing.T, ticks chan<- time.Time, service *Service, repo *automaticSchedulerRepository, now time.Time) {
 	t.Helper()
 	select {
 	case ticks <- now:
 	case <-time.After(3 * time.Second):
 		t.Fatal("scheduler did not accept the next tick")
 	}
-	automaticSchedulerWait(t, repo.lists, "scheduler refresh")
+	automaticSchedulerFlush(t, service, repo)
+	if got := repo.listCount.Load(); got != 1 {
+		t.Fatalf("deadline/event handling rescanned enabled accounts: lists=%d", got)
+	}
 }
 
-func TestAutomaticLoginSchedulerDeduplicatesAcrossTicksWithoutBlockingOtherAccounts(t *testing.T) {
+func TestAutomaticLoginSchedulerDeduplicatesEventsWithoutBlockingOtherAccounts(t *testing.T) {
 	db, err := store.Open(filepath.Join(t.TempDir(), "scheduler.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +162,9 @@ func TestAutomaticLoginSchedulerDeduplicatesAcrossTicksWithoutBlockingOtherAccou
 	// must still prevent another worker on each subsequent scheduler tick.
 	clock.Add(int64(time.Hour))
 	for i := 0; i < 5; i++ {
-		automaticSchedulerTick(t, ticks, repo, now())
+		service.NotifyAutomaticLogin(1)
+		service.NotifyAutomaticLogin(2)
+		automaticSchedulerTick(t, ticks, service, repo, now())
 	}
 	if got := fetches.Load(); got != 2 {
 		t.Fatalf("cross-tick duplicate worker reached code provider: fetches=%d want=2", got)
@@ -192,9 +224,16 @@ func TestAutomaticLoginSchedulerDisabledConfigurationAndHealthyChannelsAvoidNetw
 		}
 	}
 	ticks := automaticSchedulerStart(t, service, repo)
+	automaticSchedulerFlush(t, service, repo)
+	before := repo.readCount.Load()
 	for i := 0; i < 4; i++ {
-		automaticSchedulerTick(t, ticks, repo, now)
+		automaticSchedulerTick(t, ticks, service, repo, now)
 	}
+	if got := repo.readCount.Load() - before; got != 8 {
+		t.Fatalf("idle deadline wakeups queried accounts: %d reads (only 8 test barrier reads expected)", got)
+	}
+	service.NotifyAutomaticLogin(disabled.ID)
+	automaticSchedulerFlush(t, service, repo)
 	if got := appleCalls.Load(); got != 0 {
 		t.Fatalf("disabled/healthy accounts reached Apple: %d calls", got)
 	}
@@ -257,15 +296,199 @@ func TestAutomaticLoginSchedulerRestartHonorsReservedRetryDeadlines(t *testing.T
 	}}
 	ticks := automaticSchedulerStart(t, service, repo)
 	for i := 0; i < 3; i++ {
-		automaticSchedulerTick(t, ticks, repo, now())
+		service.NotifyAutomaticLogin(account.ID)
+		automaticSchedulerTick(t, ticks, service, repo, now())
 	}
 	if got := fetches.Load(); got != 0 {
 		t.Fatalf("restart ignored reserved deadline: %d verification-provider requests", got)
 	}
+	for _, channel := range []string{domain.AutoLoginChannelAppleAccount, domain.AutoLoginChannelICloudWeb} {
+		state, err := db.GetAccountAutoLoginState(ctx, account.ID, channel)
+		if err != nil || state.Failures != 1 || state.NextAttemptAt == nil || state.NextAttemptAt.After(latestDeadline) {
+			t.Fatalf("repeated events changed the reserved retry: channel=%s err=%v", channel, err)
+		}
+	}
 	clock.Store(latestDeadline.Add(time.Second).UnixNano())
-	automaticSchedulerTick(t, ticks, repo, now())
+	automaticSchedulerTick(t, ticks, service, repo, now())
 	automaticSchedulerWait(t, started, "retry after the durable deadline")
 	if got := fetches.Load(); got != 1 {
 		t.Fatalf("deadline expiry started %d attempts, want 1", got)
+	}
+}
+
+func TestAutomaticLoginSchedulerConfigurationEventAndDisable(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "configuration.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	account := automaticSchedulerAccount(t, db, 1, false)
+	repo := &automaticSchedulerRepository{Store: db, lists: make(chan struct{}, 16)}
+	now := time.Now().UTC()
+	s := newTestService(t, repo, &fakeAppleClient{}, &fakeLocker{}, func() time.Time { return now })
+	started := make(chan struct{}, 4)
+	s.autoLoginCodeFetcher = automaticSchedulerCodeFetcher{fetch: func(ctx context.Context, _ string) (autologincode.Result, error) {
+		started <- struct{}{}
+		<-ctx.Done()
+		return autologincode.Result{}, ctx.Err()
+	}}
+	automaticSchedulerStart(t, s, repo)
+	config, err := db.GetAccountAutoLoginConfig(context.Background(), account.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Enabled = true
+	account.AutoLogin = &config
+	if _, err := db.UpdateAccount(context.Background(), account); err != nil {
+		t.Fatal(err)
+	}
+	s.NotifyAutomaticLogin(account.ID)
+	automaticSchedulerWait(t, started, "newly enabled account event without a scan")
+	if repo.listCount.Load() != 1 {
+		t.Fatal("enabling one account rescanned all configurations")
+	}
+}
+
+func TestAutomaticLoginSchedulerRealOneShotDeadline(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "deadline.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	account := automaticSchedulerAccount(t, db, 1, true)
+	config, err := db.GetAccountAutoLoginConfig(context.Background(), account.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(150 * time.Millisecond)
+	for _, channel := range []string{domain.AutoLoginChannelAppleAccount, domain.AutoLoginChannelICloudWeb} {
+		if err := db.SaveAccountAutoLoginState(context.Background(), domain.AccountAutoLoginState{
+			AccountID: account.ID, Channel: channel, ConfigRevision: config.Revision,
+			Status: "retry_wait", Failures: 1, NextAttemptAt: &deadline,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo := &automaticSchedulerRepository{Store: db, lists: make(chan struct{}, 16)}
+	s := newTestService(t, repo, &fakeAppleClient{}, &fakeLocker{}, time.Now)
+	started := make(chan time.Time, 2)
+	s.autoLoginCodeFetcher = automaticSchedulerCodeFetcher{fetch: func(ctx context.Context, _ string) (autologincode.Result, error) {
+		started <- time.Now()
+		<-ctx.Done()
+		return autologincode.Result{}, ctx.Err()
+	}}
+	automaticSchedulerStart(t, s, repo)
+	if at := automaticSchedulerWait(t, started, "one-shot deadline without any account event"); at.Before(deadline) {
+		t.Fatal("retry started before the durable deadline")
+	}
+	if repo.listCount.Load() != 1 {
+		t.Fatal("retry timer performed a full configuration scan")
+	}
+}
+
+func TestAutomaticLoginNextDeadlineUsesExpiryAndInteractiveChallenge(t *testing.T) {
+	s, db, account, _, _ := automaticLoginFixture(t)
+	ctx := context.Background()
+	now := s.now()
+	expires := now.Add(time.Hour)
+	if err := s.saveAccountManagementSession(ctx, account.ID, apple.AccountSession{
+		AppleID: account.Email, Region: apple.RegionGlobal, APIKey: "fixture-key",
+		AuthenticatedAt: now, ExpiresAt: expires,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.saveSession(ctx, account.ID, apple.Session{AppleID: account.Email,
+		Region: apple.RegionGlobal, SessionToken: "fixture-web", Cookies: []apple.PersistentCookie{
+			{Name: "X-APPLE-WEBAUTH-TOKEN", Value: "fixture", Expires: expires.Add(time.Hour)},
+		}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, next, err := s.nextAutomaticLogin(ctx, account.ID); err != nil || !next.Equal(expires) {
+		t.Fatalf("expected exact earliest session expiry: next=%v err=%v", next, err)
+	}
+	if err := db.DeleteAppleAccountSession(ctx, account.ID); err != nil {
+		t.Fatal(err)
+	}
+	challengeExpiry := now.Add(3 * time.Minute)
+	s.accountAuthChallenges = map[int64]accountAuthChallenge{account.ID: {expires: challengeExpiry}}
+	if _, next, err := s.nextAutomaticLogin(ctx, account.ID); err != nil || !next.Equal(challengeExpiry) {
+		t.Fatalf("manual challenge did not defer automatic login: next=%v err=%v", next, err)
+	}
+	delete(s.accountAuthChallenges, account.ID)
+	if _, next, err := s.nextAutomaticLogin(ctx, account.ID); err != nil || !next.Equal(now) {
+		t.Fatalf("missing session was not eligible: next=%v err=%v", next, err)
+	}
+	account.Enabled = false
+	if _, err := db.UpdateAccount(ctx, account); err != nil {
+		t.Fatal(err)
+	}
+	if _, next, err := s.nextAutomaticLogin(ctx, account.ID); err != nil || !next.IsZero() {
+		t.Fatalf("disabled account retained a login timer: next=%v err=%v", next, err)
+	}
+}
+
+func TestAutomaticLoginSchedulerUpstreamAuthenticationEventHonorsSwitch(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		enabled   bool
+		status    int
+		kind      error
+		wantLogin bool
+	}{
+		{"expired_enabled", true, 401, apple.ErrInvalidSession, true},
+		{"expired_disabled", false, 401, apple.ErrInvalidSession, false},
+		{"rate_limit", true, 429, apple.ErrService, false},
+		{"upstream_unavailable", true, 503, apple.ErrService, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db, err := store.Open(filepath.Join(t.TempDir(), "upstream.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			account := automaticSchedulerAccount(t, db, 1, test.enabled)
+			repo := &automaticSchedulerRepository{Store: db, lists: make(chan struct{}, 16)}
+			now := time.Now().UTC()
+			client := &accountTestClient{accountRefresh: func(current apple.AccountSession) (apple.AccountSession, error) {
+				return current, &apple.Error{Kind: test.kind, StatusCode: test.status}
+			}}
+			s := newTestService(t, repo, client, &fakeLocker{}, func() time.Time { return now })
+			if err := s.saveAccountManagementSession(context.Background(), account.ID, apple.AccountSession{
+				AppleID: account.Email, Region: apple.RegionGlobal, APIKey: "fixture-key", SCNT: "fixture-scnt",
+				AuthenticatedAt: now, ExpiresAt: now.Add(time.Hour),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.saveSession(context.Background(), account.ID, apple.Session{
+				AppleID: account.Email, Region: apple.RegionGlobal, SessionToken: "fixture-web",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			started := make(chan struct{}, 2)
+			var fetches atomic.Int32
+			s.autoLoginCodeFetcher = automaticSchedulerCodeFetcher{fetch: func(ctx context.Context, _ string) (autologincode.Result, error) {
+				fetches.Add(1)
+				started <- struct{}{}
+				<-ctx.Done()
+				return autologincode.Result{}, ctx.Err()
+			}}
+			automaticSchedulerStart(t, s, repo)
+			automaticSchedulerFlush(t, s, repo)
+			if fetches.Load() != 0 {
+				t.Fatal("healthy startup attempted a login")
+			}
+			if err := s.KeepAliveAccountSession(context.Background(), account.ID); err == nil {
+				t.Fatal("expected fixture upstream failure")
+			}
+			automaticSchedulerFlush(t, s, repo)
+			if test.wantLogin {
+				automaticSchedulerWait(t, started, "explicit upstream expiry event")
+			} else if fetches.Load() != 0 {
+				t.Fatal("disabled account or non-authentication failure triggered login")
+			}
+			if repo.listCount.Load() != 1 {
+				t.Fatal("upstream event rescanned unrelated accounts")
+			}
+		})
 	}
 }

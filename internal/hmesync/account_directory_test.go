@@ -371,6 +371,32 @@ func TestSyncAccountDirectoryFailureRetainsAcceptedAccountCheckpoint(t *testing.
 	}
 }
 
+func TestSyncAccountDirectoryOnlyExplicitAuthenticationFailureRequiresLogin(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		upstream error
+		rejected bool
+	}{
+		{"expired", &apple.Error{Kind: apple.ErrInvalidSession, StatusCode: 401}, true},
+		{"throttled", &apple.Error{Kind: apple.ErrService, StatusCode: 429}, false},
+		{"unavailable", &apple.Error{Kind: apple.ErrService, StatusCode: 503}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s, _, account, _, _ := directoryServiceFixture(t)
+			s.client = &directoryTestClient{fakeAppleClient: &fakeAppleClient{}, read: func(_ context.Context, _ apple.AccountSession) (apple.ListResult, apple.AccountSession, error) {
+				return apple.ListResult{}, apple.AccountSession{}, test.upstream
+			}}
+			if _, err := s.SyncAliases(context.Background(), account.ID); err == nil {
+				t.Fatal("expected fixture directory failure")
+			}
+			stored, err := s.readAccountManagementSession(context.Background(), account.ID)
+			if err != nil || stored.RefreshRejected != test.rejected {
+				t.Fatalf("directory failure re-login eligibility: rejected=%v want=%v err=%v", stored.RefreshRejected, test.rejected, err)
+			}
+		})
+	}
+}
+
 func TestSyncAccountDirectoryRejectsAccountIdentityRace(t *testing.T) {
 	s, db, account, locker, _ := directoryServiceFixture(t)
 	s.client = &directoryTestClient{fakeAppleClient: &fakeAppleClient{}, read: func(ctx context.Context, managed apple.AccountSession) (apple.ListResult, apple.AccountSession, error) {

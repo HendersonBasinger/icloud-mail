@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"log/slog"
-	"sync"
 	"time"
 
 	"icloud-api/internal/autologincode"
@@ -45,71 +44,10 @@ func (s *Service) WithAutoLoginSettingsLock(ctx context.Context, id int64, updat
 	return update()
 }
 
-// RunAutomaticLogin supplements renewal; healthy sessions make no login or
-// code-provider requests. Each enabled account has at most one worker.
+// RunAutomaticLogin restores durable work once, then handles account events and
+// individual deadlines. It never periodically scans accounts for expired sessions.
 func (s *Service) RunAutomaticLogin(ctx context.Context, logger *slog.Logger) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	s.runAutomaticLogin(ctx, logger, ticker.C)
-}
-
-func (s *Service) runAutomaticLogin(ctx context.Context, logger *slog.Logger, ticks <-chan time.Time) {
-	repo, ok := s.repo.(automaticLoginRepository)
-	if !ok {
-		return
-	}
-	if _, ok := s.cipher.(automaticLoginCipher); !ok {
-		return
-	}
-	active := make(map[int64]bool)
-	done := make(chan int64)
-	var workers sync.WaitGroup
-	defer workers.Wait()
-	refresh := func() {
-		configs, err := repo.ListEnabledAccountAutoLoginConfigs(ctx)
-		if err != nil {
-			if ctx.Err() == nil && logger != nil {
-				logger.Warn("读取自动登录保活计划暂未完成", "operation", "apple_auto_login_list")
-			}
-			return
-		}
-		for _, config := range configs {
-			if ctx.Err() != nil || active[config.AccountID] {
-				continue
-			}
-			if !s.automaticLoginDue(ctx, config) {
-				continue
-			}
-			active[config.AccountID] = true
-			workers.Add(1)
-			go func(config domain.AccountAutoLoginConfig) {
-				defer workers.Done()
-				callCtx, cancel := context.WithTimeout(ctx, 4*time.Minute)
-				defer cancel()
-				for _, channel := range []string{"apple_account", "icloud_web"} {
-					if callCtx.Err() != nil {
-						break
-					}
-					s.runAutomaticLoginChannel(callCtx, config, channel, logger)
-				}
-				select {
-				case done <- config.AccountID:
-				case <-ctx.Done():
-				}
-			}(config)
-		}
-	}
-	refresh()
-	for ctx.Err() == nil {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticks:
-			refresh()
-		case id := <-done:
-			delete(active, id)
-		}
-	}
+	s.runAutomaticLogin(ctx, logger, nil)
 }
 
 func (s *Service) automaticLoginDue(ctx context.Context, config domain.AccountAutoLoginConfig) bool {
