@@ -154,6 +154,10 @@ curl -H 'Authorization: Bearer MAILBOX_API_KEY' \
 | 创建计划与登录恢复 | [自动创建](docs/AUTO_CREATION_CHANNELS.md) · [自动保活](docs/AUTO_LOGIN.md) |
 | 收件与配置细节 | [邮件接收](docs/MAIL-RECEPTION.md) · [配置参考](docs/REFERENCE.md) |
 
+## 致谢
+
+- **[LINUX DO](https://linux.do)** — 社区支持与灵感
+
 ## 来源与许可
 
 本项目在 [mangobubu/icloud-api](https://github.com/mangobubu/icloud-api) 的基础上持续开发，由 [t508708/icloud-mail](https://github.com/t508708/icloud-mail) 独立维护，保留上游来源与 Git 历史。感谢原作者及相关参考项目。
