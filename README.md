@@ -28,6 +28,10 @@
 
 **凭据说明**：独立 IMAP/OAuth 凭据由本网关签发，用于连接本服务；连接 Apple 上游邮箱仍需对应主号的收件凭据。
 
+## QQ 群
+
+交流使用体验、反馈问题或讨论部署：**1105888476** · [点击加入 QQ 群](https://qm.qq.com/q/6KWBNKKDEk)
+
 ## 最近更新
 
 **v0.2.8：减少反复手动登录。**
@@ -43,13 +47,10 @@
 
 完整的功能变化、修复和升级说明见 [CHANGELOG.md](CHANGELOG.md)。
 
-## QQ 群
-
-交流使用体验、反馈问题或讨论部署：**1105888476** · [点击加入 QQ 群](https://qm.qq.com/q/6KWBNKKDEk)
 
 ## 友情开源项目
 
-- [auto-team](https://github.com/DaiXuYQ/auto-team)：一个面向 Team 空间和 Free 账号池的轻量管理台，适合需要统一维护 Team、账号、自动席位轮转和 Sub2API 数据的个人开发者与小型团队。
+- **[auto-team](https://github.com/DaiXuYQ/auto-team)**：一个面向 Team 空间和 Free 账号池的轻量管理台，适合需要统一维护 Team、账号、自动席位轮转和 Sub2API 数据的个人开发者与小型团队。
 
 ## Docker 部署
 
