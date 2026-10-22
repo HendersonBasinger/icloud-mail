@@ -108,6 +108,9 @@ type Service struct {
 	accountAuthChallenges        map[int64]accountAuthChallenge
 	creationCooldowns            map[int64]map[string]time.Time
 	retirementReadCooldowns      map[int64]time.Time
+	autoLoginCodeFetcher         AutomaticLoginCodeFetcher
+	autoLoginWait                func(context.Context, time.Duration) error
+	authGenerations              map[int64]uint64
 }
 
 func New(repo Repository, cipher SessionCipher, client AppleClient, locker AccountLocker, options ...Option) (*Service, error) {
@@ -169,6 +172,7 @@ func (s *Service) StartAuth(
 		return AuthResult{}, err
 	}
 	defer release()
+	s.invalidateAutomaticLogin(accountID)
 	defer func() { password = "" }()
 
 	account, err := s.repo.GetAccount(ctx, accountID)
@@ -229,6 +233,7 @@ func (s *Service) VerifyAuth(
 		return AuthResult{}, err
 	}
 	defer release()
+	s.invalidateAutomaticLogin(accountID)
 	defer func() { code = "" }()
 
 	flow, ok := s.readChallenge(challengeID, ownerAdminID, accountID)
@@ -308,6 +313,7 @@ func (s *Service) ClearAuth(ctx context.Context, accountID int64) error {
 		return err
 	}
 	defer release()
+	s.invalidateAutomaticLogin(accountID)
 	s.deleteAccountChallenge(accountID)
 	return s.locker.WithAccountLock(ctx, accountID, func() error {
 		err := s.deleteWebSessionPreservingAccount(ctx, accountID)

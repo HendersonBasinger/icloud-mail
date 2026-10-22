@@ -234,6 +234,7 @@ func (s *Service) StartAccountAuth(ctx context.Context, owner, id int64, appleID
 		return AuthResult{}, err
 	}
 	defer release()
+	s.invalidateAutomaticLogin(id)
 	account, err := s.repo.GetAccount(ctx, id)
 	if err != nil {
 		return AuthResult{}, err
@@ -299,6 +300,7 @@ func (s *Service) VerifyAccountAuth(ctx context.Context, owner, id int64, challe
 		return AuthResult{}, err
 	}
 	defer release()
+	s.invalidateAutomaticLogin(id)
 	s.challengeMu.Lock()
 	flow, exists := s.accountAuthChallenges[id]
 	if !exists || flow.owner != owner || flow.id != challengeID || !s.now().Before(flow.expires) || flow.attempts >= s.maxAttempts {
@@ -348,6 +350,7 @@ func (s *Service) ClearAccountAuth(ctx context.Context, id int64) error {
 		return err
 	}
 	defer release()
+	s.invalidateAutomaticLogin(id)
 	account, err := s.repo.GetAccount(ctx, id)
 	if err != nil {
 		return err

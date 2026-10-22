@@ -84,6 +84,7 @@ var routeAccountID = regexp.MustCompile(`/accounts/([0-9]+)`)
 var httpOperations = map[string]string{
 	"GET /auth/csrf": "准备后台登录", "POST /auth/login": "登录后台", "GET /auth/session": "确认后台登录状态", "POST /auth/logout": "退出后台", "PUT /auth/password": "修改管理员密码",
 	"POST /accounts/:id/sync":          "请求同步主号邮件",
+	"GET /accounts/:id/auto-login":     "读取自动保活配置与状态",
 	"PUT /accounts/:id/mail-transport": "切换邮件接收通道",
 	"POST /accounts/:id/apple-auth":    "登录 iCloud Web 通道", "POST /accounts/:id/apple-auth/verify": "验证 iCloud Web 登录", "DELETE /accounts/:id/apple-auth": "退出 iCloud Web 通道",
 	"GET /accounts/:id/apple-account-auth": "读取 Apple Account 登录状态", "POST /accounts/:id/apple-account-auth": "登录 Apple Account 通道", "POST /accounts/:id/apple-account-auth/verify": "验证 Apple Account 登录", "DELETE /accounts/:id/apple-account-auth": "退出 Apple Account 通道",

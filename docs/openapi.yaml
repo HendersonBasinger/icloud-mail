@@ -506,6 +506,45 @@ paths:
           $ref: "#/components/responses/AdminInternalError"
 
 
+  /api/v1/accounts/{id}/auto-login:
+    servers:
+      - url: https://HOST/{admin_path}
+        variables:
+          admin_path:
+            default: 00000000000000000000000000000000/admin
+      - url: https://HOST/admin
+    get:
+      tags: [Admin Accounts]
+      operationId: getAdminAccountAutoLogin
+      summary: 读取主号自动保活配置标记和双通道状态
+      description: |
+        只读本地状态，不发起 Apple 登录或接码请求。无读取或导出密码、接码链接、密文、验证码的接口。
+        配置随主号 POST/PUT 的 auto_login 对象原子保存；写操作要求管理员 Session 和 CSRF。
+      security:
+        - adminSession: []
+      parameters:
+        - $ref: '#/components/parameters/AdminAccountID'
+      responses:
+        '200':
+          description: 已配置标记及新旧通道状态
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminAutoLoginStatus'
+        '401':
+          $ref: '#/components/responses/AdminAuthUnauthorized'
+        '404':
+          $ref: '#/components/responses/AdminAccountNotFound'
+        '500':
+          $ref: '#/components/responses/AdminInternalError'
+
   /api/v1/accounts/{id}:
     servers:
       - url: https://HOST/{admin_path}
@@ -1846,6 +1885,54 @@ components:
         error:
           $ref: "#/components/schemas/AdminAppleError"
 
+    AdminAutoLoginInput:
+      type: object
+      required: [enabled]
+      description: |
+        可选；省略对象保留旧行为。开启时区域、密码、接码链接必须完整；编辑时密码和链接空值保留已存值。
+        关闭不要求凭据，保留已有密文。仅支持 iCloud 主号。凭据绑定主号身份，加密保存且不回显。
+      properties:
+        enabled: {type: boolean}
+        region: {type: string, enum: [global, cn]}
+        password:
+          type: string
+          writeOnly: true
+          maxLength: 1024
+          description: Apple 登录密码，与 IMAP App 专用密码不同；保持原始空格。长度上限以 UTF-8 字节计。
+        code_url:
+          type: string
+          format: uri
+          writeOnly: true
+          maxLength: 4096
+          description: 公网 HTTP/HTTPS 双重验证接码链接，支持非标端口；与密码一起加密，不回显。长度上限以 UTF-8 字节计。
+
+    AdminAutoLoginStatus:
+      type: object
+      additionalProperties: false
+      required: [enabled, region, password_configured, code_url_configured, channels]
+      properties:
+        enabled: {type: boolean}
+        region: {type: string, enum: [global, cn]}
+        password_configured: {type: boolean}
+        code_url_configured: {type: boolean}
+        channels:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: object
+            additionalProperties: false
+            required: [channel, status, last_error_code, last_attempt_at, last_success_at, next_attempt_at]
+            properties:
+              channel: {type: string, enum: [apple_account, icloud_web]}
+              status:
+                type: string
+                enum: [disabled, idle, logging_in, waiting_code, authenticated, retry_wait, needs_action]
+              last_error_code: {type: string, maxLength: 80}
+              last_attempt_at: {type: [string, 'null'], format: date-time}
+              last_success_at: {type: [string, 'null'], format: date-time}
+              next_attempt_at: {type: [string, 'null'], format: date-time}
+
     AdminCreateAccountRequest:
       type: object
       additionalProperties: false
@@ -1917,6 +2004,8 @@ components:
           type: string
           minLength: 1
           description: IMAP 登录用户名；服务会去除首尾空白。
+        auto_login:
+          $ref: '#/components/schemas/AdminAutoLoginInput'
         imap_password:
           type: string
           minLength: 1
@@ -2000,6 +2089,8 @@ components:
             转发到第三方邮箱时，应把它填写为第三方 IMAP 登录/最终物理投递目标地址，以便同步校验投递标头。规范化后的值
             实际变化会清理旧邮箱来源的同步游标、兼容快照、消费历史、待处理 `\Seen` 任务、v2 归档
             和 OTP 历史，轮换公开 IMAPS 的 UIDVALIDITY，并重置同步状态。
+        auto_login:
+          $ref: '#/components/schemas/AdminAutoLoginInput'
         imap_password:
           type:
             - string

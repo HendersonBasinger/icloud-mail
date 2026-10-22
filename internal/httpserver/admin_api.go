@@ -66,6 +66,7 @@ func (s *Server) registerAdminAPIRoutes(api *gin.RouterGroup) {
 	protected.GET("/accounts", s.adminAPIListAccounts)
 	protected.POST("/accounts", s.adminAPICreateAccount(basePath))
 	protected.GET("/accounts/:id", s.adminAPIGetAccount)
+	protected.GET("/accounts/:id/auto-login", s.adminAPIGetAccountAutoLogin)
 	protected.PUT("/accounts/:id", s.adminAPIUpdateAccount)
 	protected.DELETE("/accounts/:id", s.adminAPIDeleteAccount)
 	protected.POST("/accounts/:id/sync", s.adminAPISyncAccount)
@@ -336,32 +337,34 @@ func adminAPIIMAPEndpointInput(host adminAPIOptionalString, port adminAPIOptiona
 }
 
 type adminAPICreateAccountRequest struct {
-	Name         string                 `json:"name"`
-	Email        string                 `json:"email"`
-	IMAPUsername string                 `json:"imap_username"`
-	IMAPPassword string                 `json:"imap_password"`
-	IMAPHost     adminAPIOptionalString `json:"imap_host"`
-	IMAPPort     adminAPIOptionalInt    `json:"imap_port"`
-	MailboxType  adminAPIOptionalString `json:"mailbox_type"`
-	AccountType  adminAPIOptionalString `json:"account_type"`
-	Provider     adminAPIOptionalString `json:"provider"`
-	EmailSuffix  adminAPIOptionalString `json:"email_suffix"`
-	CustomEmail  adminAPIOptionalString `json:"custom_email"`
+	AutoLogin    *adminAPIAutoLoginInput `json:"auto_login"`
+	Name         string                  `json:"name"`
+	Email        string                  `json:"email"`
+	IMAPUsername string                  `json:"imap_username"`
+	IMAPPassword string                  `json:"imap_password"`
+	IMAPHost     adminAPIOptionalString  `json:"imap_host"`
+	IMAPPort     adminAPIOptionalInt     `json:"imap_port"`
+	MailboxType  adminAPIOptionalString  `json:"mailbox_type"`
+	AccountType  adminAPIOptionalString  `json:"account_type"`
+	Provider     adminAPIOptionalString  `json:"provider"`
+	EmailSuffix  adminAPIOptionalString  `json:"email_suffix"`
+	CustomEmail  adminAPIOptionalString  `json:"custom_email"`
 }
 
 type adminAPIUpdateAccountRequest struct {
-	Name         string                 `json:"name"`
-	Email        string                 `json:"email"`
-	IMAPUsername string                 `json:"imap_username"`
-	IMAPPassword string                 `json:"imap_password"`
-	IMAPHost     adminAPIOptionalString `json:"imap_host"`
-	IMAPPort     adminAPIOptionalInt    `json:"imap_port"`
-	Enabled      *bool                  `json:"enabled"`
-	MailboxType  adminAPIOptionalString `json:"mailbox_type"`
-	AccountType  adminAPIOptionalString `json:"account_type"`
-	Provider     adminAPIOptionalString `json:"provider"`
-	EmailSuffix  adminAPIOptionalString `json:"email_suffix"`
-	CustomEmail  adminAPIOptionalString `json:"custom_email"`
+	AutoLogin    *adminAPIAutoLoginInput `json:"auto_login"`
+	Name         string                  `json:"name"`
+	Email        string                  `json:"email"`
+	IMAPUsername string                  `json:"imap_username"`
+	IMAPPassword string                  `json:"imap_password"`
+	IMAPHost     adminAPIOptionalString  `json:"imap_host"`
+	IMAPPort     adminAPIOptionalInt     `json:"imap_port"`
+	Enabled      *bool                   `json:"enabled"`
+	MailboxType  adminAPIOptionalString  `json:"mailbox_type"`
+	AccountType  adminAPIOptionalString  `json:"account_type"`
+	Provider     adminAPIOptionalString  `json:"provider"`
+	EmailSuffix  adminAPIOptionalString  `json:"email_suffix"`
+	CustomEmail  adminAPIOptionalString  `json:"custom_email"`
 }
 
 type adminAPICreateAliasRequest struct {
@@ -926,6 +929,15 @@ func (s *Server) adminAPICreateAccount(basePath string) gin.HandlerFunc {
 			return
 		}
 		account.PasswordCiphertext = encrypted
+		account.AutoLogin, message, err = s.prepareAccountAutoLogin(c.Request.Context(), input.AutoLogin, account, domain.Account{})
+		if err != nil {
+			s.writeAdminAPIInternalError(c, err)
+			return
+		}
+		if message != "" {
+			writeAdminAPIError(c, http.StatusBadRequest, "VALIDATION_FAILED", message)
+			return
+		}
 		created, err := s.store.CreateAccount(c.Request.Context(), account)
 		if err != nil {
 			if errors.Is(err, store.ErrAliasIdentityConflict) || adminAPIUniqueConstraint(err) {
@@ -979,7 +991,7 @@ func (s *Server) adminAPIUpdateAccount(c *gin.Context) {
 	}
 	var updated domain.Account
 	var validationMessage string
-	err := s.withAccountLock(c.Request.Context(), id, func() error {
+	err := s.withAccountAutoLoginUpdateLock(c.Request.Context(), id, func() error {
 		existing, readErr := s.store.GetAccount(c.Request.Context(), id)
 		if readErr != nil {
 			return readErr
@@ -1025,6 +1037,10 @@ func (s *Server) adminAPIUpdateAccount(c *gin.Context) {
 		} else {
 			account.PasswordCiphertext = ""
 		}
+		account.AutoLogin, validationMessage, readErr = s.prepareAccountAutoLogin(c.Request.Context(), input.AutoLogin, account, existing)
+		if readErr != nil || validationMessage != "" {
+			return readErr
+		}
 		var updateErr error
 		updated, updateErr = s.store.UpdateAccount(c.Request.Context(), account)
 		return updateErr
@@ -1033,6 +1049,8 @@ func (s *Server) adminAPIUpdateAccount(c *gin.Context) {
 		switch {
 		case errors.Is(err, store.ErrNotFound):
 			writeAdminAPIError(c, http.StatusNotFound, "NOT_FOUND", "主号不存在")
+		case errors.Is(err, store.ErrAutoLoginConfigChanged):
+			writeAdminAPIError(c, http.StatusConflict, "AUTO_LOGIN_CONFIG_CHANGED", "自动保活配置已变化，请刷新后重试")
 		case errors.Is(err, store.ErrAccountIdentityLocked):
 			writeAdminAPIError(c, http.StatusConflict, "ACCOUNT_IDENTITY_LOCKED", "已有隐私邮箱时不能修改主号邮箱或邮箱模式/后缀")
 		case errors.Is(err, store.ErrAliasIdentityConflict), adminAPIUniqueConstraint(err):

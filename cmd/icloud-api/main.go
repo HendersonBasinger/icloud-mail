@@ -260,7 +260,7 @@ func run() error {
 	}
 
 	var background sync.WaitGroup
-	background.Add(8)
+	background.Add(9)
 	if activeReceiver != nil {
 		background.Add(1)
 		go func() { defer background.Done(); <-workerContext.Done(); activeReceiver.Close() }()
@@ -268,6 +268,10 @@ func run() error {
 	go func() {
 		defer background.Done()
 		hmeService.RunAccountSessionRenewal(workerContext, logger)
+	}()
+	go func() {
+		defer background.Done()
+		hmeService.RunAutomaticLogin(workerContext, logger)
 	}()
 	if cfg.IMAPIdleEnabled && !cfg.MailOnDemandOnly {
 		background.Add(1)

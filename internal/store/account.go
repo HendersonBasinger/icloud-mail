@@ -89,6 +89,11 @@ func (s *Store) CreateAccount(ctx context.Context, account domain.Account) (doma
 	if err := s.upsertAccountMailboxSettingsTx(ctx, tx, id, mailboxType, mailboxSuffix, timestamp(now)); err != nil {
 		return domain.Account{}, fmt.Errorf("create account mailbox settings: %w", err)
 	}
+	if account.AutoLogin != nil {
+		if err := s.saveAccountAutoLoginConfigTx(ctx, tx, id, *account.AutoLogin, mailboxType); err != nil {
+			return domain.Account{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return domain.Account{}, fmt.Errorf("commit account creation: %w", err)
 	}
@@ -212,6 +217,20 @@ func (s *Store) UpdateAccount(ctx context.Context, account domain.Account) (doma
 	}
 	if err := s.upsertAccountMailboxSettingsTx(ctx, tx, account.ID, requestedMailboxType, requestedEmailSuffix, mailboxVersion); err != nil {
 		return domain.Account{}, fmt.Errorf("update account mailbox settings: %w", err)
+	}
+	if account.AutoLogin != nil {
+		if err := s.saveAccountAutoLoginConfigTx(ctx, tx, account.ID, *account.AutoLogin, requestedMailboxType); err != nil {
+			return domain.Account{}, err
+		}
+	} else if emailChanged || requestedMailboxType != domain.NormalizeMailboxType(currentMailboxType) {
+		if err := s.invalidateAccountAutoLoginIdentityTx(ctx, tx, account.ID); err != nil {
+			return domain.Account{}, err
+		}
+	}
+	if !account.Enabled {
+		if _, err := s.txExecContext(ctx, tx, `DELETE FROM account_auto_login_states WHERE account_id = ?`, account.ID); err != nil {
+			return domain.Account{}, err
+		}
 	}
 	reenabled := !currentEnabled && account.Enabled
 	if !account.Enabled {

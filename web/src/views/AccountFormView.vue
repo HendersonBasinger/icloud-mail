@@ -142,6 +142,70 @@
           <p v-if="appPasswordShapeUnusual" class="field-help" role="status">当前输入与常见 App 专用密码格式不同。请确认使用此 Apple 账户生成的 16 位字母专用密码，可保留分组连字符；Apple 登录密码用于下方连接登录。</p>
         </el-form-item>
 
+        <section v-if="!isCustomMailbox" class="form-span auto-login-card" aria-labelledby="auto-login-heading" :aria-busy="autoLoginLoading">
+          <div class="switch-field">
+            <div>
+              <h2 id="auto-login-heading">自动保活服务</h2>
+              <p>新通道或旧通道需要重新登录时，自动提交账户密码并从接码链接读取双重验证码，补充现有保活。</p>
+            </div>
+            <el-switch
+              v-model="form.autoLoginEnabled"
+              :disabled="!autoLoginReady || autoLoginLoading"
+              inline-prompt
+              active-text="开启"
+              inactive-text="关闭"
+              aria-label="自动保活服务"
+            />
+          </div>
+          <p v-if="autoLoginLoading" class="field-help" role="status">正在读取自动保活配置…</p>
+          <div v-else-if="autoLoginLoadError" class="auto-login-load-error" role="alert">
+            <p>自动保活配置读取失败。为保留原有设置，请重新读取后再保存主号。</p>
+            <el-button :icon="Refresh" @click="loadAutoLogin">重新读取保活配置</el-button>
+          </div>
+          <template v-else-if="autoLoginReady && form.autoLoginEnabled">
+            <p class="field-help">这里填写 Apple 账户登录密码，与上方收件用的 App 专用密码不同。密码与接码链接加密保存，保存后不回显；仅在重新登录时使用。</p>
+            <div class="auto-login-fields">
+              <el-form-item label="Apple 账户区域" prop="autoLoginRegion" required>
+                <el-select v-model="form.autoLoginRegion" placeholder="请选择账户区域" style="width: 100%">
+                  <el-option label="国际区" value="global" />
+                  <el-option label="中国大陆" value="cn" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="Apple 账户登录密码" prop="autoLoginPassword" required>
+                <el-input
+                  v-model="form.autoLoginPassword"
+                  type="password"
+                  :placeholder="savedAutoLogin.passwordConfigured ? '已设置，留空保留，可覆盖' : '填写 Apple 账户登录密码'"
+                  autocomplete="new-password"
+                  :spellcheck="false"
+                  autocapitalize="off"
+                />
+              </el-form-item>
+              <el-form-item class="form-span" label="保活双重验证接码链接" prop="autoLoginCodeURL" required>
+                <el-input
+                  v-model="form.autoLoginCodeURL"
+                  type="password"
+                  :placeholder="savedAutoLogin.codeURLConfigured ? '已设置，留空保留，可覆盖' : '填写完整的 http 或 https 接码链接'"
+                  autocomplete="new-password"
+                  :spellcheck="false"
+                  autocapitalize="off"
+                />
+                <p class="field-help">请选择该账户双重验证对应的接码链接。关闭自动保活后，这三项无需填写。</p>
+              </el-form-item>
+            </div>
+          </template>
+          <div v-if="autoLoginReady && savedAutoLogin.channels.length" class="auto-login-channels" aria-label="自动保活状态">
+            <div v-for="(channel, index) in savedAutoLogin.channels" :key="`${channel.channel}:${index}`" class="auto-login-channel">
+              <strong>{{ channel.channel === 'new' ? '新通道' : channel.channel === 'legacy' ? '旧通道' : '连接通道' }}</strong>
+              <span>{{ autoLoginStatusLabel(channel.status) }}</span>
+              <span v-if="channel.lastAttemptAt">最近尝试 {{ formatTime(channel.lastAttemptAt) }}</span>
+              <span v-if="channel.lastSuccessAt">最近成功 {{ formatTime(channel.lastSuccessAt) }}</span>
+              <span v-if="channel.nextAttemptAt">下次尝试 {{ formatTime(channel.nextAttemptAt) }}</span>
+              <span v-if="channel.lastErrorCode">状态码 {{ channel.lastErrorCode }}</span>
+            </div>
+          </div>
+        </section>
+
         <el-form-item v-if="isEdit" class="form-span account-enabled-field">
           <div class="switch-field">
             <div>
@@ -166,6 +230,7 @@
           type="primary"
           :icon="Check"
           :loading="submitting"
+          :disabled="!isCustomMailbox && (!autoLoginReady || autoLoginLoading)"
         >
           保存
         </el-button>
@@ -183,6 +248,7 @@ import { useRoute, useRouter } from "vue-router";
 import {
   createAccount,
   getAccount,
+  getAccountAutoLogin,
   updateAccount,
 } from "../api/admin.js";
 import RequestAlert from "../components/RequestAlert.vue";
@@ -192,6 +258,13 @@ import {
   createLatestRequestGate,
 } from "../utils/asyncState.js";
 import { confirmationCancelled, successMessage } from "../utils/feedback.js";
+import { formatTime } from "../utils/format.js";
+import {
+  autoLoginPayload,
+  autoLoginStatusLabel,
+  autoLoginValidation,
+  clearAutoLoginSecrets,
+} from "../utils/autoLogin.js";
 import {
   DEFAULT_IMAP_HOST,
   DEFAULT_IMAP_PORT,
@@ -211,7 +284,12 @@ const loadError = ref(null);
 const submitError = ref(null);
 const aliasCount = ref(0);
 const storedEnabled = ref(true);
+const autoLoginReady = ref(false);
+const autoLoginLoading = ref(false);
+const autoLoginLoadError = ref(false);
+const savedAutoLogin = reactive({ passwordConfigured: false, codeURLConfigured: false, channels: [] });
 const loadGate = createLatestRequestGate();
+const autoLoginGate = createLatestRequestGate();
 const submitLock = createActionLock();
 let viewActive = true;
 
@@ -225,6 +303,10 @@ const form = reactive({
   imapUsername: "",
   imapPassword: "",
   enabled: true,
+  autoLoginEnabled: false,
+  autoLoginRegion: "global",
+  autoLoginPassword: "",
+  autoLoginCodeURL: "",
 });
 
 const isEdit = computed(() => route.name === "account-edit");
@@ -359,6 +441,13 @@ function validateIMAPPort(_, value, callback) {
   callback();
 }
 
+function validateAutoLoginField(field) {
+  return (_, _value, callback) => {
+    const message = autoLoginValidation(form, savedAutoLogin)[field];
+    callback(message ? new Error(message) : undefined);
+  };
+}
+
 const rules = {
   name: [{ validator: validateName, trigger: "blur" }],
   mailboxType: [{ validator: validateMailboxType, trigger: "change" }],
@@ -372,6 +461,9 @@ const rules = {
     { required: true, message: "请填写 IMAP 用户名", trigger: "blur" },
   ],
   imapPassword: [{ validator: validatePassword, trigger: "blur" }],
+  autoLoginRegion: [{ validator: validateAutoLoginField("autoLoginRegion"), trigger: "change" }],
+  autoLoginPassword: [{ validator: validateAutoLoginField("autoLoginPassword"), trigger: "blur" }],
+  autoLoginCodeURL: [{ validator: validateAutoLoginField("autoLoginCodeURL"), trigger: "blur" }],
 };
 
 function resetForm() {
@@ -385,12 +477,43 @@ function resetForm() {
     imapUsername: "",
     imapPassword: "",
     enabled: true,
+    autoLoginEnabled: false,
+    autoLoginRegion: "global",
+    autoLoginPassword: "",
+    autoLoginCodeURL: "",
   });
+  autoLoginGate.invalidate();
+  autoLoginReady.value = !isEdit.value;
+  autoLoginLoading.value = false;
+  autoLoginLoadError.value = false;
+  Object.assign(savedAutoLogin, { passwordConfigured: false, codeURLConfigured: false, channels: [] });
   aliasCount.value = 0;
   storedEnabled.value = true;
   loadError.value = null;
   submitError.value = null;
   formRef.value?.clearValidate();
+}
+
+async function loadAutoLogin() {
+  if (!isEdit.value || isCustomMailbox.value) return;
+  const accountId = String(route.params.id || "");
+  const ticket = autoLoginGate.begin(routeKey());
+  autoLoginReady.value = false;
+  autoLoginLoading.value = true;
+  autoLoginLoadError.value = false;
+  try {
+    const config = await getAccountAutoLogin(accountId);
+    if (!autoLoginGate.isCurrent(ticket, routeKey())) return;
+    Object.assign(savedAutoLogin, config);
+    form.autoLoginEnabled = config.enabled;
+    form.autoLoginRegion = config.region;
+    autoLoginReady.value = true;
+  } catch {
+    if (!autoLoginGate.isCurrent(ticket, routeKey())) return;
+    autoLoginLoadError.value = true;
+  } finally {
+    if (autoLoginGate.isCurrent(ticket, routeKey())) autoLoginLoading.value = false;
+  }
 }
 
 async function loadAccount() {
@@ -419,6 +542,7 @@ async function loadAccount() {
     });
     storedEnabled.value = Boolean(account.enabled);
     aliasCount.value = account.aliasCount;
+    if (!isCustomMailbox.value) loadAutoLogin();
   } catch (error) {
     if (!loadGate.isCurrent(ticket, routeKey())) return;
     loadError.value = error;
@@ -436,6 +560,7 @@ async function submit() {
   submitting.value = true;
   try {
     submitError.value = null;
+    if (!isCustomMailbox.value && (!autoLoginReady.value || autoLoginLoading.value)) return;
     const valid = await formRef.value?.validate().catch(() => false);
     if (!valid || submittedRouteKey !== routeKey()) return;
 
@@ -458,6 +583,7 @@ async function submit() {
       imap_password: usesGenericIMAPPassword.value
         ? form.imapPassword
         : form.imapPassword.trim(),
+      auto_login: autoLoginPayload(form),
     };
     if (isCustomMailbox.value) {
       payload.email_suffix = normalizeSuffix(form.emailSuffix);
@@ -473,6 +599,7 @@ async function submit() {
       : await createAccount(payload, auth.state.csrfToken);
     if (!viewActive || submittedRouteKey !== routeKey()) return;
     form.imapPassword = "";
+    clearAutoLoginSecrets(form);
     successMessage(
       isEdit.value && !form.enabled
         ? "主号已停用；收件已暂停，下属邮箱已从隐藏邮箱列表和入池候选中隐藏，原状态及历史记录保留。"
@@ -485,6 +612,7 @@ async function submit() {
     if (!viewActive || submittedRouteKey !== routeKey()) return;
     if (confirmationCancelled(error)) return;
     form.imapPassword = "";
+    clearAutoLoginSecrets(form);
     submitError.value = error;
     formRef.value?.clearValidate("imapPassword");
   } finally {
@@ -494,6 +622,7 @@ async function submit() {
 }
 
 function cancel() {
+  clearAutoLoginSecrets(form);
   if (isEdit.value) {
     router.push({ name: "account-detail", params: { id: route.params.id } });
   } else {
@@ -511,14 +640,31 @@ watch(
   },
 );
 
+watch(() => form.autoLoginEnabled, (enabled) => {
+  if (!enabled) clearAutoLoginSecrets(form);
+  formRef.value?.clearValidate(["autoLoginRegion", "autoLoginPassword", "autoLoginCodeURL"]);
+});
+
+watch(() => form.mailboxType, (mailboxType) => {
+  if (mailboxType !== "custom") {
+    if (isEdit.value && !autoLoginReady.value && !autoLoginLoading.value && !loading.value) loadAutoLogin();
+    return;
+  }
+  form.autoLoginEnabled = false;
+  clearAutoLoginSecrets(form);
+});
+
 onMounted(() => {
+  autoLoginReady.value = !isEdit.value;
   if (isEdit.value) loadAccount();
 });
 
 onBeforeUnmount(() => {
   viewActive = false;
   loadGate.deactivate();
+  autoLoginGate.deactivate();
   form.imapPassword = "";
+  clearAutoLoginSecrets(form);
 });
 </script>
 
@@ -570,9 +716,59 @@ onBeforeUnmount(() => {
   border-radius: 5px;
 }
 
+.auto-login-card {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 20px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.auto-login-card h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.auto-login-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.auto-login-fields :deep(.el-form-item) {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.auto-login-fields :deep(.el-form-item__error) {
+  position: static;
+}
+
+.auto-login-channels {
+  display: grid;
+  gap: 10px;
+}
+
+.auto-login-channel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+}
+
+.auto-login-load-error p {
+  margin-top: 0;
+}
+
 @media (max-width: 720px) {
   .account-form-page :deep(.imap-service-fields) {
     grid-template-columns: minmax(0, 1fr) 88px;
+  }
+
+  .auto-login-fields {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

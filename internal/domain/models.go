@@ -64,8 +64,9 @@ type Account struct {
 	// legacy iCloud identity used by Apple sessions and external API lookups.
 	EmailSuffix string
 	// Configuration revisions exclude alias mutations and sync health writes.
-	MailboxConfigVersion int64 `json:"-"`
-	MailTransportVersion int64 `json:"-"`
+	MailboxConfigVersion int64                   `json:"-"`
+	MailTransportVersion int64                   `json:"-"`
+	AutoLogin            *AccountAutoLoginConfig `json:"-"`
 }
 
 // AppleWebSession stores the encrypted Apple web session associated with an

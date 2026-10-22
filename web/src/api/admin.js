@@ -11,6 +11,7 @@ import {
 } from "../utils/pagination.js";
 import { normalizeIMAPEndpoint } from "../utils/imap.js";
 import { ALIAS_DELETION_OPERATION_LABELS } from "../utils/aliasDeletionJob.js";
+import { normalizeAutoLoginConfig } from "../utils/autoLogin.js";
 
 function firstDefined(object, ...keys) {
   for (const key of keys) {
@@ -554,6 +555,13 @@ export async function getAccount(id, options = {}) {
     { signal: options.signal },
   );
   return normalizeAccountDetail(data, options);
+}
+
+export async function getAccountAutoLogin(id, options = {}) {
+  const data = await apiRequest(`/accounts/${encodeURIComponent(id)}/auto-login`, {
+    signal: options.signal,
+  });
+  return normalizeAutoLoginConfig(data);
 }
 
 function normalizeAccountDetail(data = {}, options = {}) {
