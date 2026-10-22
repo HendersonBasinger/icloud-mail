@@ -20,8 +20,8 @@ type syncDirectory struct {
 	fromAccount bool
 }
 
-// Read directories before acquiring the publication lock. Only explicit Web
-// authentication failures permit trying the independent Account channel.
+// Read directories before acquiring the publication lock. Explicit Web auth
+// failures and an unresolved 421 permit the independent Account read channel.
 func (s *Service) readSyncDirectory(ctx context.Context, account domain.Account) (syncDirectory, error) {
 	record, session, err := s.loadSession(ctx, account.ID)
 	if err != nil {
@@ -42,6 +42,13 @@ func (s *Service) readSyncDirectory(ctx context.Context, account domain.Account)
 			if expireErr := s.removeSessionForIdentity(ctx, account.ID, identityOf(account)); expireErr != nil {
 				return syncDirectory{}, errors.Join(mapped, expireErr)
 			}
+			return s.readAccountDirectoryForSync(ctx, account, mapped)
+		}
+		// A failed trusted-token exchange (421) leaves the Web checkpoint intact.
+		// The independent Account directory may still serve this read.
+		var upstream *apple.Error
+		if errors.As(err, &upstream) && upstream.StatusCode == http.StatusMisdirectedRequest &&
+			!apple.IsRateLimited(err) && ctx.Err() == nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			return s.readAccountDirectoryForSync(ctx, account, mapped)
 		}
 		return syncDirectory{}, mapped

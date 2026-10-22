@@ -65,12 +65,20 @@ func ownedDirectory(account domain.Account) apple.ListResult {
 }
 
 func TestSyncAccountDirectoryFallbackPreservesRealWebStatus(t *testing.T) {
-	for _, trigger := range []string{"list authentication", "missing web", "expired cookie", "expired record", "validate rejection"} {
+	for _, trigger := range []string{"list authentication", "missing web", "expired cookie", "expired record", "validate rejection", "validate misdirected"} {
 		t.Run(trigger, func(t *testing.T) {
 			ctx := context.Background()
 			s, db, account, locker, _ := directoryServiceFixture(t)
 			if trigger != "missing web" {
 				saveDirectoryWeb(t, s, account)
+			}
+			var webCheckpoint string
+			if trigger == "validate misdirected" {
+				record, err := db.GetAppleWebSession(ctx, account.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				webCheckpoint = record.Ciphertext
 			}
 			expectedStatus := StatusAuthenticated
 			switch trigger {
@@ -106,6 +114,9 @@ func TestSyncAccountDirectoryFallbackPreservesRealWebStatus(t *testing.T) {
 					if trigger == "validate rejection" {
 						return web, &apple.Error{Kind: apple.ErrInvalidSession, StatusCode: http.StatusUnauthorized}
 					}
+					if trigger == "validate misdirected" {
+						return web, &apple.Error{Kind: apple.ErrService, StatusCode: http.StatusMisdirectedRequest}
+					}
 					if trigger == "expired cookie" {
 						web.Cookies = nil
 					}
@@ -133,11 +144,17 @@ func TestSyncAccountDirectoryFallbackPreservesRealWebStatus(t *testing.T) {
 			if result.Session.Status != expectedStatus {
 				t.Fatalf("Web status=%q want=%q", result.Session.Status, expectedStatus)
 			}
+			if trigger == "validate misdirected" {
+				record, err := db.GetAppleWebSession(ctx, account.ID)
+				if err != nil || record.Ciphertext != webCheckpoint {
+					t.Fatal("421 fallback changed the retained Web checkpoint")
+				}
+			}
 			if trigger == "missing web" || trigger == "expired record" {
 				if validates != 0 || webReads != 0 {
 					t.Fatal("missing or expired Web state reached the Web network client")
 				}
-			} else if validates != 1 || (trigger == "validate rejection" && webReads != 0) || (trigger != "validate rejection" && webReads != 1) {
+			} else if validates != 1 || ((trigger == "validate rejection" || trigger == "validate misdirected") && webReads != 0) || (trigger != "validate rejection" && trigger != "validate misdirected" && webReads != 1) {
 				t.Fatal("unexpected Web validation and directory request order")
 			}
 			if trigger == "missing web" {
@@ -181,6 +198,8 @@ func TestSyncAccountDirectoryDoesNotFallbackForOtherWebErrors(t *testing.T) {
 		err  error
 	}{
 		{"throttle", &apple.Error{Kind: apple.ErrService, StatusCode: 429, RetryAfter: time.Minute}},
+		{"misdirected throttle", &apple.Error{Kind: apple.ErrService, StatusCode: 421, ServiceCode: "-41015"}},
+		{"misdirected cancellation", &apple.Error{Kind: apple.ErrService, StatusCode: 421, Err: context.Canceled}},
 		{"outage", &apple.Error{Kind: apple.ErrService, StatusCode: 503}},
 		{"schema", &apple.Error{Kind: apple.ErrInvalidResponse, StatusCode: 200}},
 		{"unavailable", apple.ErrHMEUnavailable},

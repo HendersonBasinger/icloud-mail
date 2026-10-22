@@ -396,7 +396,13 @@ func (s *Service) finishAutomaticLogin(ctx context.Context, attempt *automaticLo
 		if result == nil {
 			message = "Apple 通道已自动重新登录"
 		}
-		logger.Info(message, "operation", "apple_auto_login", "account_id", attempt.account.ID,
-			"channel", attempt.channel, "status", state.Status, "error_code", state.LastErrorCode)
+		attrs := []any{"operation", "apple_auto_login", "account_id", attempt.account.ID,
+			"channel", attempt.channel, "status", state.Status, "error_code", state.LastErrorCode}
+		var upstream *apple.Error
+		if errors.As(result, &upstream) {
+			attrs = append(attrs, "upstream_operation", upstream.Op, "http_status", upstream.StatusCode,
+				"service_code", upstream.ServiceCode)
+		}
+		logger.Info(message, attrs...)
 	}
 }

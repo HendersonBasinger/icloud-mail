@@ -1,8 +1,12 @@
 package hmesync
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -222,6 +226,31 @@ func TestAutomaticLoginFailureClassificationAndRetryAfter(t *testing.T) {
 			}
 		} else if state.Status != "retry_wait" || state.NextAttemptAt == nil || state.NextAttemptAt.Before(s.now().Add(2*time.Hour)) {
 			t.Fatal("Apple Retry-After was shortened")
+		}
+	}
+}
+
+func TestAutomaticLoginLogsUpstreamFingerprintWithoutCauseOrCredentials(t *testing.T) {
+	s, _, _, config, client := automaticLoginFixture(t)
+	client.accountSignIn = func(context.Context, string, string, apple.Region, *apple.AccountSession) (apple.AccountSession, bool, error) {
+		return apple.AccountSession{}, false, &apple.Error{Op: "account API", Kind: apple.ErrService,
+			StatusCode: 503, ServiceCode: "-1", Err: errors.New("secret upstream response body")}
+	}
+	s.autoLoginCodeFetcher = autoLoginFetcherFunc(func(context.Context, string) (autologincode.Result, error) {
+		return autologincode.Result{}, autologincode.ErrNoCode
+	})
+	var output bytes.Buffer
+	s.runAutomaticLoginChannel(context.Background(), config, "apple_account", slog.New(slog.NewJSONHandler(&output, nil)))
+	var event map[string]any
+	if err := json.Unmarshal(output.Bytes(), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event["http_status"] != float64(503) || event["upstream_operation"] != "account API" || event["service_code"] != "-1" {
+		t.Fatal("upstream diagnostic fingerprint missing")
+	}
+	for _, secret := range []string{"secret upstream response body", "opaque Apple password", "codes.example.test", "secret=fixture"} {
+		if strings.Contains(output.String(), secret) {
+			t.Fatal("login log leaked credential material or upstream response")
 		}
 	}
 }

@@ -2,6 +2,7 @@ package apple
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -74,6 +75,33 @@ func TestListAccountAliasesAcceptsExplicitEmptyDirectory(t *testing.T) {
 	list, _, err := c.ListAccountAliases(context.Background(), accountDirectorySession())
 	if err != nil || list.Aliases == nil || len(list.Aliases) != 0 || list.SelectedForwardTo != "owner@example.com" {
 		t.Fatalf("explicit empty directory: err=%v", err)
+	}
+}
+
+func TestListAccountAliasesIgnoresOnlySignInWithAppleRelayAddresses(t *testing.T) {
+	for _, relay := range []string{"relay@privaterelay.appleid.com", "RELAY@PRIVATERELAY.APPLEID.COM"} {
+		c := accountClient(t, func(*http.Request) (*http.Response, error) {
+			return accountResp(http.StatusOK, accountDirectoryBody(
+				`[{"id":"active-id","emailAddress":"active@icloud.com"},{"emailAddress":"`+relay+`","exists":false}]`,
+				`[{"emailAddress":"`+relay+`"},{"id":"inactive-id","emailAddress":"off@icloud.com"}]`)), nil
+		})
+		list, _, err := c.ListAccountAliases(context.Background(), accountDirectorySession())
+		if err != nil || len(list.Aliases) != 2 || list.Aliases[0].HME != "active@icloud.com" || list.Aliases[1].HME != "off@icloud.com" {
+			t.Fatalf("mixed directory: count=%d err=%v", len(list.Aliases), err)
+		}
+	}
+	for _, address := range []string{
+		"relay@privaterelay.appleid.com.attacker.test", "relay@sub.privaterelay.appleid.com",
+		"relay@notprivaterelay.appleid.com", "relay@example.com", "Name <relay@privaterelay.appleid.com>",
+		"bad@@privaterelay.appleid.com", "", "bad..local@icloud.com",
+	} {
+		encoded, _ := json.Marshal(address)
+		c := accountClient(t, func(*http.Request) (*http.Response, error) {
+			return accountResp(http.StatusOK, accountDirectoryBody(`[{"id":"bad","emailAddress":`+string(encoded)+`}]`, `[]`)), nil
+		})
+		if _, _, err := c.ListAccountAliases(context.Background(), accountDirectorySession()); !errors.Is(err, ErrInvalidResponse) {
+			t.Fatalf("invalid or unrelated address accepted: %q", address)
+		}
 	}
 }
 

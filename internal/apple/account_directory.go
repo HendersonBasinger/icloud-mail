@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -74,6 +75,17 @@ func decodeAccountDirectory(body []byte) (ListResult, error) {
 			return ListResult{}, fmt.Errorf("%s must be an array", group.name)
 		}
 		for index, entry := range entries {
+			// Apple mixes Sign in with Apple relay addresses into this directory.
+			// They are not manageable iCloud HME aliases and must not poison it.
+			var identity struct {
+				EmailAddress string `json:"emailAddress"`
+			}
+			if json.Unmarshal(entry, &identity) == nil {
+				address, addressErr := normalizeHMEAddress(identity.EmailAddress)
+				if addressErr == nil && strings.HasSuffix(address, "@privaterelay.appleid.com") {
+					continue
+				}
+			}
 			alias, err := decodeAccountDirectoryAlias(entry, forward, group.active)
 			if err != nil {
 				return ListResult{}, fmt.Errorf("%s[%d]: %w", group.name, index, err)
