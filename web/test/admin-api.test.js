@@ -46,7 +46,7 @@ function jsonResponse(data, status = 200) {
   });
 }
 
-test("account normalizes Apple directory snapshots independently of local counts", () => {
+test("account keeps a single local alias count without directory snapshots", () => {
   const account = normalizeAccount({
     alias_count: 7,
     apple_directory: {
@@ -61,18 +61,31 @@ test("account normalizes Apple directory snapshots independently of local counts
   });
 
   assert.equal(account.aliasCount, 7);
-  assert.deepEqual(account.appleDirectory, {
-    source: "icloud_web",
-    observedAt: "2026-10-22T08:00:00Z",
-    total: 5,
-    active: 4,
-    inactive: 1,
-    localMissing: 2,
-    reviewPending: 1,
+  assert.equal(Object.hasOwn(account, "appleDirectory"), false);
+});
+
+test("filtered account detail preserves the full local alias count", async () => {
+  globalThis.fetch = async () => jsonResponse({
+    account: { id: 12, alias_count: 7 },
+    aliases: [{ id: 8, address: "match@icloud.com" }],
+    pagination: { total: 1, limit: 20, offset: 0, has_more: false },
   });
-  assert.equal(normalizeAccount({}).appleDirectory, null);
-  assert.equal(normalizeAccount({ apple_directory: null }).appleDirectory, null);
-  assert.deepEqual(normalizeAccount({ appleDirectory: account.appleDirectory }).appleDirectory, account.appleDirectory);
+  const detail = await getAccount(12, { limit: 20 });
+  assert.equal(detail.account.aliasCount, 7);
+  assert.equal(detail.pagination.total, 1);
+});
+
+test("directory removal counts remain optional and preserve explicit zero", async () => {
+  for (const [summary, expected] of [
+    [{}, undefined],
+    [{ removed_count: 0 }, 0],
+    [{ removedCount: 3 }, 3],
+  ]) {
+    globalThis.fetch = async () => jsonResponse({ account: { id: 12 }, summary });
+    const result = await syncAccountAliases(12, "csrf-token");
+    assert.equal(result.summary.removedCount, expected);
+    assert.equal(Object.hasOwn(result.summary, "removedCount"), expected !== undefined);
+  }
 });
 
 test("account list normalizes sync progress and detailed error logs", async () => {
@@ -1378,6 +1391,8 @@ test("alias directory sync normalizes its summary and persistent credential bund
         inactive_count: 1,
         imported_disabled_count: 1,
         conflict_count: 1,
+        removed_count: 2,
+        directory_warning: "directory lookup incomplete",
       },
       detail_stale: true,
       created: [
@@ -1410,6 +1425,8 @@ test("alias directory sync normalizes its summary and persistent credential bund
     inactiveCount: 1,
     importedDisabledCount: 1,
     conflictCount: 1,
+    removedCount: 2,
+    directoryWarning: "directory lookup incomplete",
   });
   assert.equal(result.created[0].apiKey, "api-key");
   assert.equal(result.created[0].otpUrlPath, "/api/v1/otp?token=derived");

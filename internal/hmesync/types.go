@@ -159,6 +159,7 @@ type SyncSummary struct {
 	FilteredOutCount      int
 	DirectoryWarning      string
 	ReviewedCount         int
+	RemovedCount          int
 }
 
 type CreatedAlias struct {

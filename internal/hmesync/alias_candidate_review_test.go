@@ -17,13 +17,13 @@ type reviewCandidateClient struct {
 	read func(context.Context, apple.AccountSession) (apple.ListResult, apple.AccountSession, error)
 }
 
-type failingDirectoryObservationStore struct{ *store.Store }
+type failingDirectoryReconcileStore struct{ *store.Store }
 
-func (f failingDirectoryObservationStore) RecordAppleDirectoryObservation(context.Context, domain.Account, string, time.Time, []domain.AliasImportCandidate) error {
-	return context.Canceled
+func (f failingDirectoryReconcileStore) ReconcileAppleDirectory(context.Context, domain.Account, time.Time, []string) (int, error) {
+	return 0, context.Canceled
 }
 
-func TestDirectoryObservationFailureKeepsImportedCredentials(t *testing.T) {
+func TestDirectoryReconciliationFailureKeepsImportedCredentials(t *testing.T) {
 	s, db, account, _, _ := directoryServiceFixture(t)
 	saveDirectoryWeb(t, s, account)
 	client := s.client.(*accountTestClient)
@@ -31,10 +31,10 @@ func TestDirectoryObservationFailureKeepsImportedCredentials(t *testing.T) {
 	client.list = func(_ context.Context, web apple.Session) (apple.ListResult, apple.Session, error) {
 		return ownedDirectory(account), web, nil
 	}
-	s.repo = failingDirectoryObservationStore{db}
+	s.repo = failingDirectoryReconcileStore{db}
 	result, err := s.SyncAliases(context.Background(), account.ID)
-	if err != nil || len(result.Created) != 2 || result.Summary.DirectoryWarning != "APPLE_DIRECTORY_OBSERVATION_UNAVAILABLE" {
-		t.Fatalf("import result lost after snapshot failure: created=%d err=%v", len(result.Created), err)
+	if err != nil || len(result.Created) != 2 || result.Summary.DirectoryWarning != "APPLE_DIRECTORY_RECONCILIATION_PENDING" {
+		t.Fatalf("import result lost after reconciliation failure: created=%d err=%v", len(result.Created), err)
 	}
 	for _, created := range result.Created {
 		if created.APIKey == "" {

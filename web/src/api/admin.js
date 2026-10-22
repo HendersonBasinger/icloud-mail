@@ -161,23 +161,6 @@ export function normalizeAccount(raw = {}) {
     ),
     aliasCount:
       Number(firstDefined(raw, "alias_count", "aliasCount", "AliasCount")) || 0,
-    appleDirectory: normalizeAppleDirectory(
-      firstDefined(raw, "apple_directory", "appleDirectory"),
-    ),
-  };
-}
-
-function normalizeAppleDirectory(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-
-  return {
-    source: raw.source,
-    observedAt: firstDefined(raw, "observed_at", "observedAt") || null,
-    total: Number(raw.total) || 0,
-    active: Number(raw.active) || 0,
-    inactive: Number(raw.inactive) || 0,
-    localMissing: Number(firstDefined(raw, "local_missing", "localMissing")) || 0,
-    reviewPending: Number(firstDefined(raw, "review_pending", "reviewPending")) || 0,
   };
 }
 
@@ -830,6 +813,9 @@ export function deleteAppleSession(accountId, csrfToken) {
 
 function normalizeSyncSummary(raw = {}) {
   return {
+    ...(firstDefined(raw, "removed_count", "removedCount") != null
+      ? { removedCount: Number(firstDefined(raw, "removed_count", "removedCount")) || 0 }
+      : {}),
     ...(firstDefined(raw, "directory_warning", "directoryWarning")
       ? { directoryWarning: firstDefined(raw, "directory_warning", "directoryWarning") }
       : {}),

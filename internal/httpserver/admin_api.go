@@ -125,25 +125,24 @@ type adminAPISessionDTO struct {
 }
 
 type adminAPIAccountDTO struct {
-	ID               int64                             `json:"id"`
-	Name             string                            `json:"name"`
-	Email            string                            `json:"email"`
-	IMAPHost         string                            `json:"imap_host"`
-	IMAPPort         int                               `json:"imap_port"`
-	IMAPUsername     string                            `json:"imap_username"`
-	Enabled          bool                              `json:"enabled"`
-	LastSyncStatus   string                            `json:"last_sync_status"`
-	LastSyncError    string                            `json:"last_sync_error"`
-	LastSyncErrorLog string                            `json:"last_sync_error_log"`
-	LastSyncedAt     *string                           `json:"last_synced_at"`
-	CreatedAt        string                            `json:"created_at"`
-	UpdatedAt        string                            `json:"updated_at"`
-	AliasCount       int                               `json:"alias_count"`
-	AppleDirectory   *domain.AppleDirectoryObservation `json:"apple_directory,omitempty"`
-	MailboxType      string                            `json:"mailbox_type"`
-	Provider         string                            `json:"provider"`
-	EmailSuffix      string                            `json:"email_suffix"`
-	SyncProgress     *adminAPISyncProgressDTO          `json:"sync_progress,omitempty"`
+	ID               int64                    `json:"id"`
+	Name             string                   `json:"name"`
+	Email            string                   `json:"email"`
+	IMAPHost         string                   `json:"imap_host"`
+	IMAPPort         int                      `json:"imap_port"`
+	IMAPUsername     string                   `json:"imap_username"`
+	Enabled          bool                     `json:"enabled"`
+	LastSyncStatus   string                   `json:"last_sync_status"`
+	LastSyncError    string                   `json:"last_sync_error"`
+	LastSyncErrorLog string                   `json:"last_sync_error_log"`
+	LastSyncedAt     *string                  `json:"last_synced_at"`
+	CreatedAt        string                   `json:"created_at"`
+	UpdatedAt        string                   `json:"updated_at"`
+	AliasCount       int                      `json:"alias_count"`
+	MailboxType      string                   `json:"mailbox_type"`
+	Provider         string                   `json:"provider"`
+	EmailSuffix      string                   `json:"email_suffix"`
+	SyncProgress     *adminAPISyncProgressDTO `json:"sync_progress,omitempty"`
 }
 
 type adminAPISyncProgressDTO struct {
@@ -408,7 +407,6 @@ func adminAPIAccountFromDomain(account domain.Account) adminAPIAccountDTO {
 		CreatedAt:        adminAPITime(account.CreatedAt),
 		UpdatedAt:        adminAPITime(account.UpdatedAt),
 		AliasCount:       account.AliasCount,
-		AppleDirectory:   account.AppleDirectory,
 		MailboxType:      domain.NormalizeMailboxType(account.MailboxType),
 		Provider:         domain.NormalizeMailboxType(account.MailboxType),
 		EmailSuffix:      account.EmailSuffix,

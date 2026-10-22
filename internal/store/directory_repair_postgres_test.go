@@ -42,15 +42,12 @@ func TestDirectoryRepairPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := db.RecordAppleDirectoryObservation(ctx, account, "icloud_web", time.Now(), nil); err != nil {
-		t.Fatal(err)
-	}
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
 	got, err := db.GetAccount(ctx, account.ID)
-	if err != nil || got.AliasCount != 1 || got.AppleDirectory == nil || got.AppleDirectory.Total != 0 || got.AppleDirectory.LocalMissing != 1 || got.AppleDirectory.ReviewPending != 1 {
-		t.Fatalf("PostgreSQL snapshot=%+v err=%v", got.AppleDirectory, err)
+	if err != nil || got.AliasCount != 1 {
+		t.Fatalf("PostgreSQL count=%d err=%v", got.AliasCount, err)
 	}
 	if _, err := db.GetPendingAutoAliasConfirmation(ctx, account.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("PostgreSQL review still gates: %v", err)

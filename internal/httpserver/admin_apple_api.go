@@ -73,6 +73,7 @@ type adminAPIAppleSyncSummaryDTO struct {
 	FilteredOutCount      int    `json:"filtered_out_count"`
 	DirectoryWarning      string `json:"directory_warning,omitempty"`
 	ReviewedCount         int    `json:"reviewed_count"`
+	RemovedCount          int    `json:"removed_count"`
 }
 
 type adminAPIAppleCreatedAliasDTO struct {
@@ -336,6 +337,7 @@ func adminAPIAppleSyncSummary(summary hmesync.SyncSummary) adminAPIAppleSyncSumm
 		FilteredOutCount:      summary.FilteredOutCount,
 		DirectoryWarning:      summary.DirectoryWarning,
 		ReviewedCount:         summary.ReviewedCount,
+		RemovedCount:          summary.RemovedCount,
 	}
 }
 

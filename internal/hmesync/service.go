@@ -346,8 +346,12 @@ func (s *Service) SyncAliases(ctx context.Context, accountID int64) (SyncResult,
 	if err != nil {
 		return SyncResult{}, err
 	}
+	_, _, err = filterAliases(directory.list, account.Email)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	directory, reconcileReady, reconcileErr := s.directoryForReconciliation(ctx, account, startedAt, directory)
 	list, updated := directory.list, directory.web
-
 	filtered, inactive, err := filterAliases(list, account.Email)
 	if err != nil {
 		return SyncResult{}, err
@@ -376,6 +380,10 @@ func (s *Service) SyncAliases(ctx context.Context, accountID int64) (SyncResult,
 	var webInfo SessionInfo
 	var directoryWarning string
 	var reviewedCount int
+	var removedCount int
+	if reconcileErr != nil {
+		directoryWarning = "APPLE_DIRECTORY_RECONCILIATION_PENDING"
+	}
 	err = s.locker.WithAccountLock(ctx, accountID, func() error {
 		current, err := s.repo.GetAccount(ctx, accountID)
 		if err != nil {
@@ -410,13 +418,15 @@ func (s *Service) SyncAliases(ctx context.Context, accountID int64) (SyncResult,
 			if reviewErr != nil {
 				directoryWarning = "APPLE_CANDIDATE_REVIEW_PENDING"
 			}
-			if observer, ok := s.repo.(directoryObservationRepository); ok {
-				source := "icloud_web"
-				if directory.fromAccount {
-					source = "apple_account"
+			if repo, ok := s.repo.(directoryReconcileRepository); ok && reconcileReady {
+				addresses := make([]string, 0, len(list.Aliases))
+				for _, remote := range list.Aliases {
+					addresses = append(addresses, remote.HME)
 				}
-				if observationErr := observer.RecordAppleDirectoryObservation(ctx, account, source, startedAt, candidates); observationErr != nil {
-					directoryWarning = "APPLE_DIRECTORY_OBSERVATION_UNAVAILABLE"
+				var cleanupErr error
+				removedCount, cleanupErr = repo.ReconcileAppleDirectory(ctx, account, startedAt, addresses)
+				if cleanupErr != nil {
+					directoryWarning = "APPLE_DIRECTORY_RECONCILIATION_PENDING"
 				}
 			}
 		}
@@ -454,6 +464,7 @@ func (s *Service) SyncAliases(ctx context.Context, accountID int64) (SyncResult,
 			FilteredOutCount:      len(list.Aliases) - len(filtered),
 			DirectoryWarning:      directoryWarning,
 			ReviewedCount:         reviewedCount,
+			RemovedCount:          removedCount,
 		},
 		Created: created,
 		Session: webInfo,

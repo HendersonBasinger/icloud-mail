@@ -228,7 +228,7 @@
           title="隐私邮箱"
           :description="isCustomMailbox
             ? '按邮箱后缀生成或手动登记地址；每个地址使用独立的完整凭证包。'
-            : '同步地址并核对目录，目录缺项保留本地记录；已有记录的启停状态保持不变。不下载邮件正文或验证码，取码由上方的按需收件处理。'"
+            : '以 Apple 目录为准，导入和核对隐藏邮箱地址，清理远端已不存在的地址；不下载邮件正文或验证码，取码由上方的按需收件处理。'"
         >
           <template #actions>
             <el-button
@@ -243,13 +243,6 @@
             </el-button>
           </template>
         </SectionHeader>
-
-        <p v-if="!isCustomMailbox && account.appleDirectory" class="field-help">
-          Apple 目录 {{ account.appleDirectory.total }}（启用 {{ account.appleDirectory.active }}，停用 {{ account.appleDirectory.inactive }}）；本地记录 {{ account.aliasCount }}
-          <span v-if="account.appleDirectory.localMissing">；目录暂未发现 {{ account.appleDirectory.localMissing }}</span>
-          <span v-if="account.appleDirectory.reviewPending">；待复核候选 {{ account.appleDirectory.reviewPending }}</span>
-          <span>；快照时间：{{ formatTime(account.appleDirectory.observedAt, { seconds: true }) }}</span>
-        </p>
 
         <AppleConnectionPanel
           v-if="!isCustomMailbox"
@@ -270,7 +263,8 @@
             {{ aliasSyncSummary.inactiveCount }}，因本地容量暂未启用
             {{ aliasSyncSummary.importedDisabledCount }}，冲突
             {{ aliasSyncSummary.conflictCount }}
-            <span v-if="aliasSyncSummary.directoryWarning">；地址已同步，部分目录核对待下次同步完成</span>
+            <span v-if="aliasSyncSummary.removedCount !== undefined">；清理 {{ aliasSyncSummary.removedCount }} 个</span>
+            <span v-if="aliasSyncSummary.directoryWarning">；部分目录核对未完成，未清理缺失地址</span>
           </div>
         </div>
 
@@ -2096,8 +2090,14 @@ async function performAliasesSync({ afterAuthentication = false } = {}) {
     const createdNotice = result.summary.createdCount
       ? `，新增 ${result.summary.createdCount} 个，可通过列表中的复制操作导出完整凭证`
       : "，没有新增地址";
+    const removedNotice = result.summary.removedCount !== undefined
+      ? `，清理 ${result.summary.removedCount} 个`
+      : "";
+    const directoryNotice = result.summary.directoryWarning
+      ? "；部分目录核对未完成，未清理缺失地址"
+      : "";
     successMessage(
-      `地址目录同步完成，Apple 共 ${result.summary.total} 个地址${createdNotice}${capacityNotice}；本次未读取邮件。`,
+      `地址目录同步完成，Apple 共 ${result.summary.total} 个地址${createdNotice}${capacityNotice}${removedNotice}${directoryNotice}；本次未读取邮件。`,
     );
   } catch (error) {
     if (!isCurrentAccount(accountId)) return;

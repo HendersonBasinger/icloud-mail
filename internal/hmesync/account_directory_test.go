@@ -316,7 +316,7 @@ func TestSyncAccountDirectoryChecksLoginIdentityAndForwardOwnership(t *testing.T
 	}
 }
 
-func TestSyncAccountDirectoryKeepsLocalAliasesMissingFromNextProjection(t *testing.T) {
+func TestSyncAccountDirectoryFallbackDoesNotDeleteWithoutWebCrosscheck(t *testing.T) {
 	s, db, account, _, _ := directoryServiceFixture(t)
 	reads := 0
 	web := &fakeAppleClient{}
@@ -340,13 +340,8 @@ func TestSyncAccountDirectoryKeepsLocalAliasesMissingFromNextProjection(t *testi
 		t.Fatalf("empty owned projection: %v", err)
 	}
 	after, err := db.ListAliasesByAccount(context.Background(), account.ID)
-	if err != nil || len(after) != len(before) || web.deactivateCalls.Load() != 0 || web.deleteCalls.Load() != 0 {
-		t.Fatal("directory absence deleted a local or remote alias")
-	}
-	for index := range before {
-		if before[index].ID != after[index].ID || before[index].Enabled != after[index].Enabled || before[index].APIKeyPrefix != after[index].APIKeyPrefix {
-			t.Fatal("directory absence mutated an existing local alias")
-		}
+	if err != nil || len(after) != len(before) || result.Summary.RemovedCount != 0 || result.Summary.DirectoryWarning != "APPLE_DIRECTORY_RECONCILIATION_PENDING" || web.deactivateCalls.Load() != 0 || web.deleteCalls.Load() != 0 {
+		t.Fatal("fallback without Web confirmation removed addresses or made remote writes")
 	}
 }
 

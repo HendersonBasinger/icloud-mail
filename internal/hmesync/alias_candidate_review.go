@@ -10,10 +10,6 @@ import (
 	"icloud-api/internal/store"
 )
 
-type directoryObservationRepository interface {
-	RecordAppleDirectoryObservation(context.Context, domain.Account, string, time.Time, []domain.AliasImportCandidate) error
-}
-
 type candidateReviewRepository interface {
 	ReviewStaleAccountAliasCandidate(context.Context, int64, int64, string, time.Time) error
 	ListReviewPendingAliases(context.Context, int64) ([]domain.PendingAliasAPIKey, error)
