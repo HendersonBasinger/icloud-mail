@@ -144,7 +144,7 @@ Failed attempts may also consume the attempt allowance. Manual creation and prob
 - **Code retrieval speed depends on delivery and upstream connections.** On-demand incremental reads, connection reuse, and batch processing reduce duplicate work. Actual latency also depends on whether mail has arrived and the network between your server and the upstream service.
 - **Login and mail retrieval use separate connections.** A healthy Apple management connection does not mean the IMAP credentials are valid. The two can be maintained separately.
 - **Keep credentials and backups secure.** Login passwords and code retrieval URLs are stored encrypted and are not displayed back to users; the running service can decrypt them for use. Migration requires both the database and the original keys.
-- **This project relies on unofficial Apple APIs.** Upstream changes, regional differences, and account status may affect operation. This project is not affiliated with or endorsed by Apple.
+- **Connects directly to Apple services by default.** Mail retrieval uses standard IMAP access supported by Apple. Hide My Email management adapts the interfaces used by Apple's websites; their behavior may change with website updates, account regions, and account status. This is an independently maintained, self-hosted tool with no affiliation with or endorsement by Apple.
 
 ## Documentation
 
