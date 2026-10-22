@@ -55,6 +55,7 @@ type Account struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	AliasCount         int
+	AppleDirectory     *AppleDirectoryObservation
 	// MailboxType is the account's mailbox integration mode. Empty values on
 	// in-memory legacy records are treated as MailboxTypeICloud by stores and
 	// API boundaries.
@@ -67,6 +68,18 @@ type Account struct {
 	MailboxConfigVersion int64                   `json:"-"`
 	MailTransportVersion int64                   `json:"-"`
 	AutoLogin            *AccountAutoLoginConfig `json:"-"`
+}
+
+// AppleDirectoryObservation reports a successful upstream snapshot separately
+// from the local inventory. Missing entries are not deletion receipts.
+type AppleDirectoryObservation struct {
+	Source        string    `json:"source"`
+	ObservedAt    time.Time `json:"observed_at"`
+	Total         int       `json:"total"`
+	Active        int       `json:"active"`
+	Inactive      int       `json:"inactive"`
+	LocalMissing  int       `json:"local_missing"`
+	ReviewPending int       `json:"review_pending"`
 }
 
 // AppleWebSession stores the encrypted Apple web session associated with an

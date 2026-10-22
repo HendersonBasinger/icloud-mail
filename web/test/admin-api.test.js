@@ -26,6 +26,7 @@ import {
   loginAppleSession,
   moveAliasToGroup,
   moveAliasesToGroup,
+  normalizeAccount,
   normalizeAutoCreation,
   normalizeAliasDeletionJob,
   rotateAlias,
@@ -44,6 +45,35 @@ function jsonResponse(data, status = 200) {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+test("account normalizes Apple directory snapshots independently of local counts", () => {
+  const account = normalizeAccount({
+    alias_count: 7,
+    apple_directory: {
+      source: "icloud_web",
+      observed_at: "2026-10-22T08:00:00Z",
+      total: 5,
+      active: 4,
+      inactive: 1,
+      local_missing: 2,
+      review_pending: 1,
+    },
+  });
+
+  assert.equal(account.aliasCount, 7);
+  assert.deepEqual(account.appleDirectory, {
+    source: "icloud_web",
+    observedAt: "2026-10-22T08:00:00Z",
+    total: 5,
+    active: 4,
+    inactive: 1,
+    localMissing: 2,
+    reviewPending: 1,
+  });
+  assert.equal(normalizeAccount({}).appleDirectory, null);
+  assert.equal(normalizeAccount({ apple_directory: null }).appleDirectory, null);
+  assert.deepEqual(normalizeAccount({ appleDirectory: account.appleDirectory }).appleDirectory, account.appleDirectory);
+});
 
 test("account list normalizes sync progress and detailed error logs", async () => {
   globalThis.fetch = async () =>

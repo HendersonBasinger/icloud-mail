@@ -92,10 +92,8 @@ func (s *Store) createAutoAliasCandidate(
 	if state.MailboxType != domain.MailboxTypeICloud {
 		return domain.Alias{}, domain.AppleWebSession{}, ErrICloudMailboxRequired
 	}
-	if alias.Enabled {
-		if err := s.requireEnabledAliasCapacity(ctx, tx, alias.AccountID); err != nil {
-			return domain.Alias{}, domain.AppleWebSession{}, fmt.Errorf("create automatic alias: %w", err)
-		}
+	if err := s.requireEnabledAliasCapacity(ctx, tx, alias.AccountID); err != nil {
+		return domain.Alias{}, domain.AppleWebSession{}, fmt.Errorf("create automatic alias: %w", err)
 	}
 	initialHash := alias.APIKeyHash
 	if len(initialHash) == 0 {
@@ -231,6 +229,7 @@ func (s *Store) getPendingAutoAliasConfirmation(ctx context.Context, accountID i
 		WHERE al.account_id = ?
 		  AND al.enabled = FALSE
 		  AND al.last_sync_error = ?
+		  AND NOT EXISTS (SELECT 1 FROM apple_alias_candidate_reviews r WHERE r.alias_id = al.id)
 		  AND (? = '' OR c.channel IS NULL OR c.channel = ?)
 		ORDER BY p.created_at, al.id
 		LIMIT 1`, accountID, domain.AppleAliasConfirmationPending, channel, channel))
@@ -252,6 +251,7 @@ func (s *Store) SaveAliasCreationCandidateDetail(ctx context.Context, accountID,
 	}
 	result, err := s.execContext(ctx, `INSERT INTO apple_alias_creation_candidates(alias_id, channel, remote_id)
 		SELECT id, ?, ? FROM aliases WHERE id = ? AND account_id = ? AND enabled = FALSE AND last_sync_error = ?
+		AND NOT EXISTS (SELECT 1 FROM apple_alias_candidate_reviews r WHERE r.alias_id = aliases.id)
 		ON CONFLICT(alias_id) DO UPDATE SET remote_id = excluded.remote_id
 		WHERE apple_alias_creation_candidates.channel = excluded.channel
 		AND (apple_alias_creation_candidates.remote_id = '' OR apple_alias_creation_candidates.remote_id = excluded.remote_id)`,
@@ -389,6 +389,9 @@ func (s *Store) ConfirmPendingAutoAlias(
 	if err := requireAffected(result, "pending automatic alias"); err != nil {
 		return domain.Alias{}, domain.AppleWebSession{}, err
 	}
+	if _, err := s.txExecContext(ctx, tx, `DELETE FROM apple_alias_candidate_reviews WHERE alias_id = ?`, aliasID); err != nil {
+		return domain.Alias{}, domain.AppleWebSession{}, fmt.Errorf("clear confirmed alias review: %w", err)
+	}
 	if _, err := s.bumpAccountVersionTx(ctx, tx, session.AccountID, accountVersion); err != nil {
 		return domain.Alias{}, domain.AppleWebSession{}, fmt.Errorf("advance account version after automatic alias confirmation: %w", err)
 	}
@@ -422,11 +425,13 @@ func (s *Store) requirePendingAutoAliasConfirmationCapacity(
 	var count int
 	if err := s.txQueryRowContext(ctx, tx, `
 		SELECT COUNT(*) FROM aliases
-		WHERE account_id = ? AND enabled = TRUE`, accountID,
+		WHERE account_id = ? AND (enabled = TRUE OR (enabled = FALSE AND last_sync_error = ?))`,
+		accountID, domain.AppleAliasConfirmationPending,
 	).Scan(&count); err != nil {
 		return fmt.Errorf("count enabled aliases: %w", err)
 	}
-	if count >= domain.MaxEnabledAliasesPerAccount {
+	// The candidate being confirmed already occupies one pending slot.
+	if count > domain.MaxEnabledAliasesPerAccount {
 		return ErrAliasLimit
 	}
 	return nil

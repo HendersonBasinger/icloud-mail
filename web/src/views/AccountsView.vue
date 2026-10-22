@@ -77,7 +77,12 @@
               <SyncStatus :item="row" />
             </template>
             <template v-else-if="column.key === 'aliasCount'">
-              {{ row.aliasCount }}
+              <div v-if="row.mailboxType !== 'custom' && row.appleDirectory" class="primary-stack"
+                :title="`Apple 目录快照：${formatTime(row.appleDirectory.observedAt, { seconds: true })}`">
+                <strong>Apple {{ row.appleDirectory.total }}</strong>
+                <small>本地 {{ row.aliasCount }}</small>
+              </div>
+              <template v-else>{{ row.aliasCount }}</template>
             </template>
             <template v-else-if="column.key === 'lastSyncedAt'">
               {{ formatTime(row.lastSyncedAt, { seconds: true }) }}
@@ -108,7 +113,11 @@
           <dl class="mobile-kv-list">
             <div>
               <dt>隐私邮箱</dt>
-              <dd>{{ account.aliasCount }}</dd>
+              <dd v-if="account.mailboxType !== 'custom' && account.appleDirectory">
+                Apple {{ account.appleDirectory.total }} / 本地 {{ account.aliasCount }}
+                <small>（快照：{{ formatTime(account.appleDirectory.observedAt, { seconds: true }) }}）</small>
+              </dd>
+              <dd v-else>{{ account.aliasCount }}</dd>
             </div>
             <div>
               <dt>最近同步</dt>

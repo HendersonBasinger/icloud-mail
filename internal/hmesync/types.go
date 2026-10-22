@@ -157,6 +157,8 @@ type SyncSummary struct {
 	ImportedDisabledCount int
 	ConflictCount         int
 	FilteredOutCount      int
+	DirectoryWarning      string
+	ReviewedCount         int
 }
 
 type CreatedAlias struct {

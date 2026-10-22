@@ -64,13 +64,15 @@ type adminAPIAppleAuthResultDTO struct {
 }
 
 type adminAPIAppleSyncSummaryDTO struct {
-	Total                 int `json:"total"`
-	CreatedCount          int `json:"created_count"`
-	ExistingCount         int `json:"existing_count"`
-	InactiveCount         int `json:"inactive_count"`
-	ImportedDisabledCount int `json:"imported_disabled_count"`
-	ConflictCount         int `json:"conflict_count"`
-	FilteredOutCount      int `json:"filtered_out_count"`
+	Total                 int    `json:"total"`
+	CreatedCount          int    `json:"created_count"`
+	ExistingCount         int    `json:"existing_count"`
+	InactiveCount         int    `json:"inactive_count"`
+	ImportedDisabledCount int    `json:"imported_disabled_count"`
+	ConflictCount         int    `json:"conflict_count"`
+	FilteredOutCount      int    `json:"filtered_out_count"`
+	DirectoryWarning      string `json:"directory_warning,omitempty"`
+	ReviewedCount         int    `json:"reviewed_count"`
 }
 
 type adminAPIAppleCreatedAliasDTO struct {
@@ -332,6 +334,8 @@ func adminAPIAppleSyncSummary(summary hmesync.SyncSummary) adminAPIAppleSyncSumm
 		ImportedDisabledCount: summary.ImportedDisabledCount,
 		ConflictCount:         summary.ConflictCount,
 		FilteredOutCount:      summary.FilteredOutCount,
+		DirectoryWarning:      summary.DirectoryWarning,
+		ReviewedCount:         summary.ReviewedCount,
 	}
 }
 

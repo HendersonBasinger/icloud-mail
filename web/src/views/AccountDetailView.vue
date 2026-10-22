@@ -228,7 +228,7 @@
           title="隐私邮箱"
           :description="isCustomMailbox
             ? '按邮箱后缀生成或手动登记地址；每个地址使用独立的完整凭证包。'
-            : '仅同步隐藏邮箱地址、备注与启停状态，不下载邮件正文或验证码。取码由上方的按需收件处理。'"
+            : '同步地址并核对目录，目录缺项保留本地记录；已有记录的启停状态保持不变。不下载邮件正文或验证码，取码由上方的按需收件处理。'"
         >
           <template #actions>
             <el-button
@@ -243,6 +243,13 @@
             </el-button>
           </template>
         </SectionHeader>
+
+        <p v-if="!isCustomMailbox && account.appleDirectory" class="field-help">
+          Apple 目录 {{ account.appleDirectory.total }}（启用 {{ account.appleDirectory.active }}，停用 {{ account.appleDirectory.inactive }}）；本地记录 {{ account.aliasCount }}
+          <span v-if="account.appleDirectory.localMissing">；目录暂未发现 {{ account.appleDirectory.localMissing }}</span>
+          <span v-if="account.appleDirectory.reviewPending">；待复核候选 {{ account.appleDirectory.reviewPending }}</span>
+          <span>；快照时间：{{ formatTime(account.appleDirectory.observedAt, { seconds: true }) }}</span>
+        </p>
 
         <AppleConnectionPanel
           v-if="!isCustomMailbox"
@@ -263,6 +270,7 @@
             {{ aliasSyncSummary.inactiveCount }}，因本地容量暂未启用
             {{ aliasSyncSummary.importedDisabledCount }}，冲突
             {{ aliasSyncSummary.conflictCount }}
+            <span v-if="aliasSyncSummary.directoryWarning">；地址已同步，部分目录核对待下次同步完成</span>
           </div>
         </div>
 
@@ -1657,9 +1665,7 @@ async function loadDetail({ silent = false } = {}) {
       loadError.value = null;
       return await loadDetail({ silent });
     }
-    account.value = allItems && !query && enabled === undefined
-      ? { ...detail.account, aliasCount: resolvedTotal }
-      : detail.account;
+    account.value = detail.account;
     aliases.value = nextAliases;
     const validIds = new Set(selectableAliases.value.map((alias) => alias.id));
     const nextSelected = new Map(selectedAliasRecords.value);

@@ -109,6 +109,10 @@ func (r fullCapacityPendingRepository) CountEnabledAliasesByAccount(context.Cont
 	return domain.MaxEnabledAliasesPerAccount, nil
 }
 
+func (r fullCapacityPendingRepository) CountAliasCreationOccupancy(context.Context, int64) (int, error) {
+	return domain.MaxEnabledAliasesPerAccount, nil
+}
+
 func TestIndependentPendingDoesNotBypassCapacity(t *testing.T) {
 	ctx := context.Background()
 	s, db, account := independentAccountFixture(t, true)

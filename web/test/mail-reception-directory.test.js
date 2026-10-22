@@ -6,7 +6,8 @@ const source = await readFile(new URL("../src/views/AccountDetailView.vue", impo
 
 test("directory sync is explicit about not fetching message bodies", () => {
   assert.match(source, /同步地址目录/);
-  assert.match(source, /仅同步隐藏邮箱地址、备注与启停状态，不下载邮件正文或验证码/);
+  assert.match(source, /同步地址并核对目录，目录缺项保留本地记录/);
+  assert.match(source, /不下载邮件正文或验证码/);
   assert.match(source, /本次未读取邮件/);
   assert.doesNotMatch(source, /title="IMAP 邮件同步"/);
   assert.match(source, /title="邮件接收"/);

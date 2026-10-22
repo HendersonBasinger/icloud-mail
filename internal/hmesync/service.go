@@ -336,6 +336,7 @@ func (s *Service) SyncAliases(ctx context.Context, accountID int64) (SyncResult,
 		return SyncResult{}, err
 	}
 	defer release()
+	startedAt := s.now()
 
 	account, err := s.repo.GetAccount(ctx, accountID)
 	if err != nil {
@@ -373,6 +374,8 @@ func (s *Service) SyncAliases(ctx context.Context, accountID int64) (SyncResult,
 	var issued []domain.AliasImportCredential
 	var saved domain.AppleWebSession
 	var webInfo SessionInfo
+	var directoryWarning string
+	var reviewedCount int
 	err = s.locker.WithAccountLock(ctx, accountID, func() error {
 		current, err := s.repo.GetAccount(ctx, accountID)
 		if err != nil {
@@ -400,6 +403,22 @@ func (s *Service) SyncAliases(ctx context.Context, accountID int64) (SyncResult,
 		}
 		if errors.Is(err, store.ErrICloudMailboxRequired) {
 			return wrapError(CodeAccountChanged, ErrAccountChanged, err)
+		}
+		if err == nil {
+			var reviewErr error
+			reviewedCount, reviewErr = s.confirmReviewedDirectoryAliases(ctx, accountID, filtered)
+			if reviewErr != nil {
+				directoryWarning = "APPLE_CANDIDATE_REVIEW_PENDING"
+			}
+			if observer, ok := s.repo.(directoryObservationRepository); ok {
+				source := "icloud_web"
+				if directory.fromAccount {
+					source = "apple_account"
+				}
+				if observationErr := observer.RecordAppleDirectoryObservation(ctx, account, source, startedAt, candidates); observationErr != nil {
+					directoryWarning = "APPLE_DIRECTORY_OBSERVATION_UNAVAILABLE"
+				}
+			}
 		}
 		return err
 	})
@@ -433,6 +452,8 @@ func (s *Service) SyncAliases(ctx context.Context, accountID int64) (SyncResult,
 			ImportedDisabledCount: imported.ImportedDisabledCount,
 			ConflictCount:         len(imported.Conflicts),
 			FilteredOutCount:      len(list.Aliases) - len(filtered),
+			DirectoryWarning:      directoryWarning,
+			ReviewedCount:         reviewedCount,
 		},
 		Created: created,
 		Session: webInfo,
@@ -619,6 +640,11 @@ func (s *Service) createAliasWithChannel(ctx context.Context, accountID int64, c
 		confirmPending = modernRepo.ConfirmPendingAutoAlias
 	} else {
 		return domain.Alias{}, errors.New("automatic alias creation persistence is unavailable")
+	}
+	if occupancy, ok := s.repo.(interface {
+		CountAliasCreationOccupancy(context.Context, int64) (int, error)
+	}); ok {
+		countEnabled = occupancy.CountAliasCreationOccupancy
 	}
 	if preferred := domain.ScheduledCreationChannel(ctx); !probe && channel == "auto" && preferred != "" {
 		if repo, ok := s.repo.(channelPendingRepository); ok {
@@ -1006,6 +1032,32 @@ func (s *Service) createAliasWithChannel(ctx context.Context, accountID int64, c
 	// not force an otherwise unnecessary Apple login.
 	if err := checkpointSession(ctx, listedSession); err != nil {
 		return domain.Alias{}, wrapPersistenceError(err)
+	}
+	if hasPendingConfirmation {
+		persistManaged := func(opCtx context.Context, managed apple.AccountSession) error {
+			if releaseAccount != nil {
+				return s.saveAccountManagementSession(opCtx, accountID, managed)
+			}
+			return s.persistAccountManagementSession(opCtx, accountID, identityOf(account), managed)
+		}
+		reviewed, positive, returned, reviewErr := s.reviewOldAccountCandidate(ctx, account, pendingConfirmation, settings, listedSession, persistManaged)
+		if reviewErr != nil {
+			return domain.Alias{}, reviewErr
+		}
+		listedSession = returned
+		if positive != nil {
+			return confirmPendingAlias(ctx, pendingConfirmation.Alias, *positive, listedSession, 1)
+		}
+		if reviewed {
+			hasPendingConfirmation, pendingConfirmationTracked = false, false
+			count, err := countEnabled(ctx, accountID)
+			if err != nil {
+				return domain.Alias{}, err
+			}
+			if count >= domain.MaxEnabledAliasesPerAccount {
+				return domain.Alias{}, store.ErrAliasLimit
+			}
+		}
 	}
 	if hasPendingConfirmation {
 		confirmed, found := findAppleAlias(settings.Aliases, pendingConfirmation.Alias.Address)

@@ -23,7 +23,17 @@ const accountColumns = `
 	COALESCE((SELECT ams.updated_at FROM account_mailbox_settings ams
 		WHERE ams.account_id = a.id), 0),
 	COALESCE((SELECT amt.updated_at FROM account_mail_transports amt
-		WHERE amt.account_id = a.id), 0)`
+		WHERE amt.account_id = a.id), 0),
+	COALESCE((SELECT source FROM apple_directory_observations WHERE account_id = a.id
+		AND identity_email = a.email AND identity_imap_username = a.imap_username
+		AND identity_mailbox_version = COALESCE((SELECT updated_at FROM account_mailbox_settings WHERE account_id = a.id),0)), ''),
+	COALESCE((SELECT observed_at FROM apple_directory_observations WHERE account_id = a.id), 0),
+	COALESCE((SELECT total FROM apple_directory_observations WHERE account_id = a.id), 0),
+	COALESCE((SELECT active FROM apple_directory_observations WHERE account_id = a.id), 0),
+	COALESCE((SELECT inactive FROM apple_directory_observations WHERE account_id = a.id), 0),
+	COALESCE((SELECT local_missing FROM apple_directory_observations WHERE account_id = a.id), 0),
+	(SELECT COUNT(*) FROM apple_alias_candidate_reviews r JOIN aliases ar ON ar.id = r.alias_id
+		WHERE ar.account_id = a.id AND ar.enabled = FALSE AND ar.last_sync_error = 'APPLE_ALIAS_CONFIRMATION_PENDING')`
 
 type AccountListFilter struct {
 	Query  string
@@ -654,6 +664,8 @@ func scanAccount(scanner rowScanner) (domain.Account, error) {
 	var enabled bool
 	var lastSyncedAt sql.NullInt64
 	var createdAt, updatedAt int64
+	var directory domain.AppleDirectoryObservation
+	var observedAt int64
 	err := scanner.Scan(
 		&account.ID, &account.Name, &account.Email, &account.IMAPHost, &account.IMAPPort,
 		&account.IMAPUsername, &account.PasswordCiphertext, &enabled,
@@ -661,6 +673,8 @@ func scanAccount(scanner rowScanner) (domain.Account, error) {
 		&createdAt, &updatedAt, &account.AliasCount,
 		&account.MailboxType, &account.EmailSuffix,
 		&account.MailboxConfigVersion, &account.MailTransportVersion,
+		&directory.Source, &observedAt, &directory.Total, &directory.Active,
+		&directory.Inactive, &directory.LocalMissing, &directory.ReviewPending,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -669,6 +683,10 @@ func scanAccount(scanner rowScanner) (domain.Account, error) {
 		return domain.Account{}, fmt.Errorf("scan account: %w", err)
 	}
 	account.Enabled = enabled
+	if directory.Source != "" {
+		directory.ObservedAt = timeFromTimestamp(observedAt)
+		account.AppleDirectory = &directory
+	}
 	account.LastSyncedAt = timePtr(lastSyncedAt)
 	account.CreatedAt = timeFromTimestamp(createdAt)
 	account.UpdatedAt = timeFromTimestamp(updatedAt)
