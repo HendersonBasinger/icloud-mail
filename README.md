@@ -1,7 +1,9 @@
 <div align="center">
+
 # iCloud Mail
 
 **把 iCloud 隐藏邮箱管理、邮件接收和 API 取码放进一个控制面板。**
+
 自托管 · 多主号 · 邮箱池 · 按需收件 · 深浅色主题 
 **当前版本：v0.2.8**
 [下载与发布说明](https://github.com/t508708/icloud-mail/releases) · [Docker 部署](#docker-部署) · [接口文档](docs/POOL.md) · [更新日志](CHANGELOG.md)
