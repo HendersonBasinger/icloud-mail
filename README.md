@@ -168,5 +168,5 @@ MIT 许可文本见 [LICENSE](LICENSE)；适用范围、上游来源与第三方
   <sub>感谢原作者 <a href="https://github.com/mangobubu">mangobubu</a>。本项目基于 <a href="https://github.com/mangobubu/icloud-api">icloud-api</a> 持续开发，保留上游来源与 Git 历史。</sub>
 </p>
 <p align="right">
-  <sub>不想折腾嫌麻烦，想直接到手即用的大白菜隐藏邮箱： <a href="[https://github.com/mangobubu](https://qm.qq.com/q/z7TABWukrm)">点击加入QQ群</a></sub>
+  <sub>不想折腾嫌麻烦，想直接到手即用的大白菜隐藏邮箱： <a href="https://qm.qq.com/q/z7TABWukrm">点击加入QQ群</a></sub>
 </p>
