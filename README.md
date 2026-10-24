@@ -10,7 +10,7 @@
 
 **当前版本：v0.2.8**
 
-[下载与发布说明](https://github.com/t508708/icloud-mail/releases) · [Docker 部署](#docker-部署) · [接口文档](docs/POOL.md) · [更新日志](CHANGELOG.md)
+[下载与发布说明](https://github.com/HendersonBasinger/icloud-mail/releases) · [Docker 部署](#docker-部署) · [接口文档](docs/POOL.md) · [更新日志](CHANGELOG.md)
 
 </div>
 
@@ -61,7 +61,7 @@
 ### 1. 拉取并启动
 
 ```sh
-git clone --depth 1 https://github.com/t508708/icloud-mail.git
+git clone --depth 1 https://github.com/HendersonBasinger/icloud-mail.git
 cd icloud-mail
 cp -n .env.example .env
 
@@ -70,7 +70,7 @@ docker compose up -d --wait
 docker compose ps
 ```
 
-默认拉取 `ghcr.io/t508708/icloud-mail:latest` 和配套 PostgreSQL 镜像，无需本地编译。`latest` 跟随主分支镜像发布，正式版本与离线包见 [Releases](https://github.com/t508708/icloud-mail/releases)。
+默认拉取 `ghcr.io/HendersonBasinger/icloud-mail:latest` 和配套 PostgreSQL 镜像，无需本地编译。`latest` 跟随主分支镜像发布，正式版本与离线包见 [Releases](https://github.com/HendersonBasinger/icloud-mail/releases)。
 
 ### 2. 打开控制面板
 

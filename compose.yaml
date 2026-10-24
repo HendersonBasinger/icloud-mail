@@ -1,7 +1,7 @@
 services:
   icloud-api:
     container_name: icloud-api
-    image: ${ICLOUD_API_IMAGE:-ghcr.io/t508708/icloud-mail:latest}
+    image: ${ICLOUD_API_IMAGE:-ghcr.io/HendersonBasinger/icloud-mail:latest}
     pull_policy: always
     restart: unless-stopped
     stop_grace_period: 2m
@@ -76,7 +76,7 @@ services:
       start_period: 10s
 
   postgres:
-    image: ${ICLOUD_API_POSTGRES_IMAGE:-ghcr.io/t508708/icloud-mail-postgres:latest}
+    image: ${ICLOUD_API_POSTGRES_IMAGE:-ghcr.io/HendersonBasinger/icloud-mail-postgres:latest}
     pull_policy: always
     restart: unless-stopped
     stop_grace_period: 60s

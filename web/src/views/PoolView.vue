@@ -22,7 +22,7 @@
           <div class="pool-toolbar">
             <el-select
               v-model="memberState"
-              placeholder="全部状态"
+              placeholder="有效记录"
               clearable
               @change="
                 memberPage = 1;
@@ -117,7 +117,7 @@
                 loadLeases();
               "
               ><el-option
-                v-for="s in ['leased', 'used', 'released', 'expired']"
+                v-for="s in ['active', 'leased', 'used', 'released', 'expired', 'retired']"
                 :key="s"
                 :label="stateName(s)"
                 :value="s"
@@ -136,13 +136,46 @@
                 :label="c.project"
                 :value="c.id"
             /></el-select>
+            <el-button type="primary" @click="claimOpen = true">批量领取</el-button>
+            <el-button
+              :disabled="!leases.items.length"
+              @click="copyLeaseAddresses"
+              >复制当前页邮箱</el-button
+            >
+            <el-button
+              type="primary"
+              :disabled="selectedLeasedCount === 0"
+              :loading="batchActionLoading"
+              @click="commitSelectedLeases"
+              >批量确认使用{{ selectedLeasedCount ? ` (${selectedLeasedCount})` : "" }}</el-button
+            >
+            <el-button
+              type="warning"
+              :disabled="selectedLeasedCount === 0"
+              :loading="batchActionLoading"
+              @click="releaseSelectedLeases"
+              >批量释放{{ selectedLeasedCount ? ` (${selectedLeasedCount})` : "" }}</el-button
+            >
+            <el-button
+              type="danger"
+              :disabled="selectedUsedCount === 0"
+              :loading="batchActionLoading"
+              @click="retireSelectedLeases"
+              >批量永久删除{{ selectedUsedCount ? ` (${selectedUsedCount})` : "" }}</el-button
+            >
           </div>
           <div class="pool-table-scroll" role="region" aria-label="领取记录列表" tabindex="0"><el-table
             :data="leases.items"
             v-loading="loading"
             class="pool-table"
             empty-text="项目通过 API 领取邮箱后，记录会显示在这里。"
+            @selection-change="onLeaseSelectionChange"
           >
+            <el-table-column
+              type="selection"
+              width="45"
+              :selectable="(row) => row.state === 'leased' || row.state === 'used'"
+            />
             <el-table-column prop="address" label="邮箱" min-width="230" />
             <el-table-column prop="project" label="项目" min-width="110" />
             <el-table-column label="状态" width="100"
@@ -462,6 +495,27 @@ grant_type=refresh_token&amp;client_id=CLIENT_ID&amp;refresh_token=REFRESH_TOKEN
         >
       </el-dialog>
 
+      <el-dialog v-model="claimOpen" title="批量领取邮箱" width="min(560px,94vw)" destroy-on-close>
+        <p>领取后可在本页按状态追踪。默认租期 30 分钟，领取结果只在本次弹窗中显示。</p>
+        <el-form label-width="90px">
+          <el-form-item label="项目">
+            <el-select v-model="claimClientID" placeholder="请选择项目" style="width: 100%">
+              <el-option v-for="c in clients.filter((v) => v.enabled)" :key="c.id" :label="c.project" :value="c.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="数量">
+            <el-input-number v-model="claimCount" :min="1" :max="50" />
+          </el-form-item>
+          <el-form-item label="租期（分钟）">
+            <el-input-number v-model="claimTTLMinutes" :min="1" :max="1440" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="claimOpen = false">取消</el-button>
+          <el-button type="primary" :loading="claimLoading" :disabled="!claimClientID" @click="claimPool">领取</el-button>
+        </template>
+      </el-dialog>
+
       <el-dialog
         v-model="secretOpen"
         :title="secretTitle"
@@ -504,12 +558,25 @@ const clientsLoaded = ref(false);
 const clientsLoading = ref(false);
 let clientsInFlight;
 const memberState = ref(""),
-  leaseState = ref(""),
+  leaseState = ref("active"),
   search = ref(""),
   clientFilter = ref(""),
   projectName = ref("");
 const memberPage = ref(1),
   leasePage = ref(1);
+const selectedLeases = ref([]),
+  batchActionLoading = ref(false);
+const selectedLeasedCount = computed(
+  () => selectedLeases.value.filter((row) => row.state === "leased").length,
+);
+const selectedUsedCount = computed(
+  () => selectedLeases.value.filter((row) => row.state === "used").length,
+);
+const claimOpen = ref(false),
+  claimLoading = ref(false),
+  claimClientID = ref(""),
+  claimCount = ref(1),
+  claimTTLMinutes = ref(30);
 const enrollOpen = ref(false),
   enrollDraft = ref(""),
   enrollSearch = ref(""),
@@ -566,6 +633,7 @@ const secretOpen = ref(false),
   secret = ref("");
 const stateName = (s) =>
   ({
+    active: "有效记录",
     available: "空闲",
     leased: "已领取",
     used: "已使用",
@@ -701,6 +769,115 @@ function reveal(title, value) {
   secret.value =
     typeof value === "string" ? value : JSON.stringify(value, null, 2);
   secretOpen.value = true;
+}
+async function claimPool() {
+  if (claimLoading.value || !claimClientID.value) return;
+  claimLoading.value = true;
+  error.value = null;
+  try {
+    const result = await request("/pool/leases/claim", "POST", {
+      client_id: claimClientID.value,
+      count: claimCount.value,
+      ttl_seconds: claimTTLMinutes.value * 60,
+      request_id: `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    });
+    const rows = result.leases || [];
+    reveal(
+      `领取成功（${rows.length} 个邮箱）`,
+      rows.map((item) => {
+        const mailbox = item.mailbox || {};
+        return [mailbox.email || item.lease?.address || "", mailbox.otp_path ? `${location.origin}${mailbox.otp_path}` : ""]
+          .filter(Boolean)
+          .join("\t");
+      }).join("\n"),
+    );
+    claimOpen.value = false;
+    await loadLeases();
+  } catch (e) {
+    error.value = e;
+  } finally {
+    claimLoading.value = false;
+  }
+}
+async function copyLeaseAddresses() {
+  const rows = leases.value.items.filter(
+    (row) => row.state === "leased" || row.state === "used",
+  );
+  const text = rows.map((row) => row.address).filter(Boolean).join("\n");
+  if (!text) return;
+  await copyText(text);
+  ElMessage.success(`已复制 ${rows.length} 个有效邮箱地址`);
+}
+function onLeaseSelectionChange(rows) {
+  selectedLeases.value = Array.isArray(rows) ? rows : [];
+}
+async function releaseSelectedLeases() {
+  const rows = selectedLeases.value.filter((row) => row.state === "leased");
+  if (!rows.length) return;
+  try {
+    await ElMessageBox.confirm(
+      `确定释放选中的 ${rows.length} 个邮箱？释放后邮箱会回到公共库存，之后可能再次领取到。`,
+      "批量释放",
+      { type: "warning" },
+    );
+    await runBatchLeaseAction("/pool/leases/release-batch", {
+      client_id: rows[0].client_id,
+      lease_ids: rows.map((row) => row.id),
+    }, `已释放 ${rows.length} 个邮箱`);
+  } catch (e) {
+    if (e !== "cancel" && e !== "close") error.value = e;
+  }
+  async function commitSelectedLeases() {
+    const rows = selectedLeases.value.filter((row) => row.state === "leased");
+    if (!rows.length) return;
+    try {
+      await ElMessageBox.confirm(
+        `确定将选中的 ${rows.length} 个邮箱标记为已使用？标记后不会再自动回到库存。`,
+        "批量确认使用",
+        { type: "warning", confirmButtonText: "确认使用" },
+      );
+      await runBatchLeaseAction("/pool/leases/commit-batch", {
+        client_id: rows[0].client_id,
+        lease_ids: rows.map((row) => row.id),
+      }, `已确认使用 ${rows.length} 个邮箱`);
+    } catch (e) {
+      if (e !== "cancel" && e !== "close") error.value = e;
+    }
+  }
+}
+async function retireSelectedLeases() {
+  const rows = selectedLeases.value.filter((row) => row.state === "used");
+  if (!rows.length) return;
+  try {
+    await ElMessageBox.confirm(
+      `确定永久删除选中的 ${rows.length} 个邮箱？此操作会从 Apple/iCloud 和本地邮箱池移除，不能恢复。`,
+      "批量永久删除",
+      { type: "error", confirmButtonText: "确认永久删除" },
+    );
+    const clientID = rows[0].client_id;
+    const operationID = `retire-web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    await runBatchLeaseAction("/pool/admin-aliases/batch", {
+      client_id: clientID,
+      operation_id: operationID,
+      items: rows.map((row) => ({ alias_id: row.alias_id, lease_id: row.id })),
+    }, `已提交 ${rows.length} 个邮箱的永久删除任务`);
+  } catch (e) {
+    if (e !== "cancel" && e !== "close") error.value = e;
+  }
+}
+async function runBatchLeaseAction(path, body, successMessage) {
+  batchActionLoading.value = true;
+  error.value = null;
+  try {
+    await request(path, "POST", body);
+    selectedLeases.value = [];
+    ElMessage.success(successMessage);
+    await loadLeases();
+  } catch (e) {
+    if (e !== "cancel" && e !== "close") error.value = e;
+  } finally {
+    batchActionLoading.value = false;
+  }
 }
 async function createClient() {
   await mutate(async () => {

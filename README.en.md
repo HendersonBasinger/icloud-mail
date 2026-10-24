@@ -10,7 +10,7 @@ Self-hosted · Multiple primary accounts · Mailbox pools · On-demand mail retr
 
 **Current version: v0.2.8**
 
-[Downloads and release notes](https://github.com/t508708/icloud-mail/releases) · [Docker deployment](#docker-deployment) · [API documentation](docs/POOL.md) · [Changelog](CHANGELOG.md)
+[Downloads and release notes](https://github.com/HendersonBasinger/icloud-mail/releases) · [Docker deployment](#docker-deployment) · [API documentation](docs/POOL.md) · [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -60,7 +60,7 @@ Requires **Docker Engine, Docker Compose v2, and Git**. At least **2 CPU cores /
 ### 1. Clone and Start
 
 ```sh
-git clone --depth 1 https://github.com/t508708/icloud-mail.git
+git clone --depth 1 https://github.com/HendersonBasinger/icloud-mail.git
 cd icloud-mail
 cp -n .env.example .env
 
@@ -69,7 +69,7 @@ docker compose up -d --wait
 docker compose ps
 ```
 
-By default, this pulls `ghcr.io/t508708/icloud-mail:latest` and the accompanying PostgreSQL image; no local compilation is required. `latest` follows image releases from the main branch. Formal releases and offline packages are available under [Releases](https://github.com/t508708/icloud-mail/releases).
+By default, this pulls `ghcr.io/HendersonBasinger/icloud-mail:latest` and the accompanying PostgreSQL image; no local compilation is required. `latest` follows image releases from the main branch. Formal releases and offline packages are available under [Releases](https://github.com/HendersonBasinger/icloud-mail/releases).
 
 ### 2. Open the Dashboard
 

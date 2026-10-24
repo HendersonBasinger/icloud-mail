@@ -291,6 +291,18 @@ func (s *Store) ListPoolClients(ctx context.Context) ([]PoolClient, error) {
 	return result, rows.Err()
 }
 
+func (s *Store) GetPoolClient(ctx context.Context, id string) (PoolClient, error) {
+	var v PoolClient
+	var at int64
+	err := s.queryRowContext(ctx, `SELECT id,project,enabled,created_at FROM pool_clients WHERE id = ?`, id).
+		Scan(&v.ID, &v.Project, &v.Enabled, &at)
+	if err != nil {
+		return PoolClient{}, err
+	}
+	v.CreatedAt = time.Unix(0, at).UTC()
+	return v, nil
+}
+
 func (s *Store) AuthenticatePoolClient(ctx context.Context, token string) (PoolClient, error) {
 	var v PoolClient
 	var at int64
@@ -458,8 +470,14 @@ func scanPoolLease(row rowScanner) (PoolLease, error) {
 
 func (s *Store) ListPoolLeases(ctx context.Context, clientID, state string, limit, offset int) (PoolPage[PoolLease], error) {
 	page := PoolPage[PoolLease]{Items: []PoolLease{}}
-	where := ` WHERE (?='' OR l.client_id=?) AND (?='' OR l.state=?)`
-	args := []any{clientID, clientID, state, state}
+	where := ` WHERE (?='' OR l.client_id=?)`
+	args := []any{clientID, clientID}
+	if state == "active" {
+		where += ` AND l.state IN ('leased','used')`
+	} else {
+		where += ` AND (?='' OR l.state=?)`
+		args = append(args, state, state)
+	}
 	if err := s.queryRowContext(ctx, `SELECT COUNT(*) FROM pool_leases l`+where, args...).Scan(&page.Total); err != nil {
 		return page, err
 	}

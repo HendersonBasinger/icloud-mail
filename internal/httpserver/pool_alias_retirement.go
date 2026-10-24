@@ -77,6 +77,10 @@ func (s *Server) adminAPIPoolAliasRetirementStart(c *gin.Context) {
 		return
 	}
 	client := poolClient(c)
+	s.startPoolAliasRetirement(c, client, input)
+}
+
+func (s *Server) startPoolAliasRetirement(c *gin.Context, client store.PoolClient, input poolAliasRetirementRequest) {
 	// Existing jobs are read before current aliases: a completed job has
 	// deliberately removed them, while a replay must remain observable.
 	if existing, err := s.store.GetPoolAliasRetirementJob(c.Request.Context(), input.OperationID, client.ID); err == nil {

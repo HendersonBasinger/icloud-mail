@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -79,11 +80,146 @@ func (s *Server) registerAdminPoolRoutes(api *gin.RouterGroup) {
 	api.POST("/members", s.adminEnrollPoolMembers)
 	api.PATCH("/members/:id", s.adminSetPoolMember)
 	api.GET("/leases", s.adminPoolLeases)
+	api.POST("/leases/claim", s.adminClaimPool)
+	api.POST("/leases/commit-batch", s.adminCommitPoolLeases)
+	api.POST("/leases/release-batch", s.adminReleasePoolLeases)
+	api.POST("/admin-aliases/batch", s.adminRetirePoolAliases)
 	api.POST("/leases/:leaseID/release", s.poolLeaseAction("release", true))
 	api.POST("/leases/:leaseID/commit", s.poolLeaseAction("commit", true))
 	api.GET("/clients", s.adminPoolClients)
 	api.POST("/clients", s.adminCreatePoolClient)
 	api.PATCH("/clients/:clientID", s.adminUpdatePoolClient)
+}
+
+func (s *Server) adminCommitPoolLeases(c *gin.Context) {
+	var input struct {
+		ClientID string   `json:"client_id"`
+		LeaseIDs []string `json:"lease_ids"`
+	}
+	if !decodeAdminAPIJSON(c, &input) {
+		return
+	}
+	client, err := s.store.GetPoolClient(c.Request.Context(), strings.TrimSpace(input.ClientID))
+	if err != nil || !client.Enabled || len(input.LeaseIDs) == 0 || len(input.LeaseIDs) > 50 {
+		s.poolError(c, store.ErrPoolInput)
+		return
+	}
+	for _, id := range input.LeaseIDs {
+		lease, getErr := s.store.GetPoolLease(c.Request.Context(), strings.TrimSpace(id), client.ID)
+		if getErr != nil || lease.State != "leased" {
+			s.poolError(c, store.ErrPoolClosed)
+			return
+		}
+	}
+	committed := make([]store.PoolLease, 0, len(input.LeaseIDs))
+	for _, id := range input.LeaseIDs {
+		lease, actErr := s.store.ActPoolLease(c.Request.Context(), strings.TrimSpace(id), client.ID, "commit", 0)
+		if actErr != nil {
+			s.poolError(c, actErr)
+			return
+		}
+		committed = append(committed, lease)
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"committed": committed}})
+}
+
+func (s *Server) adminReleasePoolLeases(c *gin.Context) {
+	var input struct {
+		ClientID string   `json:"client_id"`
+		LeaseIDs []string `json:"lease_ids"`
+	}
+	if !decodeAdminAPIJSON(c, &input) {
+		return
+	}
+	client, err := s.store.GetPoolClient(c.Request.Context(), strings.TrimSpace(input.ClientID))
+	if err != nil || !client.Enabled || len(input.LeaseIDs) == 0 || len(input.LeaseIDs) > 50 {
+		s.poolError(c, store.ErrPoolInput)
+		return
+	}
+	for _, id := range input.LeaseIDs {
+		lease, getErr := s.store.GetPoolLease(c.Request.Context(), strings.TrimSpace(id), client.ID)
+		if getErr != nil || lease.State != "leased" {
+			s.poolError(c, store.ErrPoolClosed)
+			return
+		}
+	}
+	released := make([]store.PoolLease, 0, len(input.LeaseIDs))
+	for _, id := range input.LeaseIDs {
+		lease, actErr := s.store.ActPoolLease(c.Request.Context(), strings.TrimSpace(id), client.ID, "release", 0)
+		if actErr != nil {
+			s.poolError(c, actErr)
+			return
+		}
+		released = append(released, lease)
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"released": released}})
+}
+
+func (s *Server) adminRetirePoolAliases(c *gin.Context) {
+	var input struct {
+		ClientID string `json:"client_id"`
+		poolAliasRetirementRequest
+	}
+	if !decodeAdminAPIJSON(c, &input) {
+		return
+	}
+	client, err := s.store.GetPoolClient(c.Request.Context(), strings.TrimSpace(input.ClientID))
+	if err != nil || !client.Enabled {
+		s.poolError(c, store.ErrPoolInput)
+		return
+	}
+	s.startPoolAliasRetirement(c, client, input.poolAliasRetirementRequest)
+}
+
+func (s *Server) adminClaimPool(c *gin.Context) {
+	var input struct {
+		ClientID   string `json:"client_id"`
+		Count      int    `json:"count"`
+		TTLSeconds int    `json:"ttl_seconds"`
+		RequestID  string `json:"request_id"`
+		AccountID  int64  `json:"account_id"`
+		GroupID    int64  `json:"group_id"`
+	}
+	if !decodeAdminAPIJSON(c, &input) {
+		return
+	}
+	clientID := strings.TrimSpace(input.ClientID)
+	if clientID == "" {
+		s.poolError(c, store.ErrPoolInput)
+		return
+	}
+	client, err := s.store.GetPoolClient(c.Request.Context(), clientID)
+	if err != nil {
+		s.poolError(c, err)
+		return
+	}
+	if !client.Enabled {
+		s.poolError(c, store.ErrPoolConflict)
+		return
+	}
+	if err := s.store.RefreshPool(c.Request.Context()); err != nil {
+		s.poolError(c, err)
+		return
+	}
+	leases, err := s.store.ClaimPool(c.Request.Context(), client.ID, store.PoolClaim{
+		RequestID: input.RequestID, Count: input.Count, TTLSeconds: input.TTLSeconds,
+		AccountID: input.AccountID, GroupID: input.GroupID,
+	})
+	if err != nil {
+		s.poolError(c, err)
+		return
+	}
+	result := make([]gin.H, 0, len(leases))
+	for _, lease := range leases {
+		payload, err := s.poolLeasePayload(c, lease)
+		if err != nil {
+			s.poolError(c, err)
+			return
+		}
+		result = append(result, payload)
+	}
+	s.audit(c, nil, "admin", "pool_claim", "pool_request", input.RequestID, "success", client.Project)
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"leases": result, "project": client.Project}})
 }
 
 func (s *Server) poolError(c *gin.Context, err error) {
@@ -175,11 +311,15 @@ func (s *Server) poolLeasePayload(c *gin.Context, lease store.PoolLease) (gin.H,
 	if err != nil {
 		return nil, err
 	}
+	_, publicPort, _ := net.SplitHostPort(s.cfg.PublicIMAPAddr)
+	if publicPort == "" {
+		publicPort = "1993"
+	}
 	result["mailbox"] = gin.H{"alias_id": alias.ID, "email": alias.Address, "api_key": dto.APIKey,
 		"imap_password": dto.IMAPPassword, "client_id": dto.ClientID, "refresh_token": dto.RefreshToken,
 		"credential_version": dto.CredentialVersion, "otp_path": dto.OTPURLPath,
 		"code_path": "/api/v1/pool/leases/" + lease.ID + "/code", "oauth_token_path": "/oauth2/v2.0/token",
-		"imap_host": s.cfg.PublicIMAPServerName, "imap_port": 1993, "imap_tls": true}
+		"imap_host": s.cfg.PublicIMAPServerName, "imap_port": publicPort, "imap_tls": true}
 	return result, nil
 }
 

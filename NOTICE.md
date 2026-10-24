@@ -16,7 +16,7 @@
 
 上游目前未声明 MIT、Apache、GPL 等通用软件许可证，原作者与其他贡献者保留各自代码的权利。源码公开本身不代表整个代码库已授予商业使用或再分发许可；需要额外授权时应向相应权利人确认。后续取得明确授权时，再更新本说明和相应许可范围。
 
-本项目现于独立 GitHub 仓库 [t508708/icloud-mail](https://github.com/t508708/icloud-mail) 维护；迁移前的 GitHub fork 留档于 [t508708/icloud-mail-fork-archive-20260924](https://github.com/t508708/icloud-mail-fork-archive-20260924)。仓库关系调整保留本项目 Git 历史、上游来源和上述许可说明，不改变各部分代码原有的权利归属。公开仓库只同步经过检查的项目源码；当前服务器的账号、邮件、凭据、证书、运行日志和本机运维历史均未作为发布内容。
+本项目现于独立 GitHub 仓库 [HendersonBasinger/icloud-mail](https://github.com/HendersonBasinger/icloud-mail) 维护；迁移前的 GitHub fork 留档于 [t508708/icloud-mail-fork-archive-20260924](https://github.com/t508708/icloud-mail-fork-archive-20260924)。仓库关系调整保留本项目 Git 历史、上游来源和上述许可说明，不改变各部分代码原有的权利归属。公开仓库只同步经过检查的项目源码；当前服务器的账号、邮件、凭据、证书、运行日志和本机运维历史均未作为发布内容。
 
 ## 参考项目
 
@@ -44,7 +44,7 @@ As of the 2026-10-22 review, no general-purpose software license was identified 
 
 Upstream authors and other contributors retain their rights. Public source access alone does not grant commercial-use or redistribution rights for the combined codebase. Additional permissions must come from the relevant rights holders. This notice and the applicable license scope will be updated if explicit permission is obtained.
 
-The project is independently maintained at [t508708/icloud-mail](https://github.com/t508708/icloud-mail). Its former GitHub fork is archived at [t508708/icloud-mail-fork-archive-20260924](https://github.com/t508708/icloud-mail-fork-archive-20260924). Changing the repository relationship does not change ownership or licensing. Published source excludes deployment accounts, mail, credentials, certificates, runtime logs, and private operational history.
+The project is independently maintained at [HendersonBasinger/icloud-mail](https://github.com/HendersonBasinger/icloud-mail). Its former GitHub fork is archived at [t508708/icloud-mail-fork-archive-20260924](https://github.com/t508708/icloud-mail-fork-archive-20260924). Changing the repository relationship does not change ownership or licensing. Published source excludes deployment accounts, mail, credentials, certificates, runtime logs, and private operational history.
 
 ### References and third-party components
 

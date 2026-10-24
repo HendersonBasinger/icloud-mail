@@ -27,15 +27,15 @@ test("release documentation retains upstream attribution and license notice", as
   for (const path of ["README.md", "NOTICE.md"]) {
     const source = await read(path);
     assert.ok(source.includes("https://github.com/mangobubu/icloud-api"));
-    assert.ok(source.includes("t508708/icloud-mail"));
+    assert.ok(source.includes("HendersonBasinger/icloud-mail"));
   }
   assert.ok((await read("README.md")).includes("[NOTICE.md](NOTICE.md)"));
 });
 
 test("default deployment pulls GHCR latest while source builds stay opt-in", async () => {
   const compose = await read("compose.yaml");
-  assert.ok(compose.includes("ghcr.io/t508708/icloud-mail:latest"));
-  assert.ok(compose.includes("ghcr.io/t508708/icloud-mail-postgres:latest"));
+  assert.ok(compose.includes("ghcr.io/HendersonBasinger/icloud-mail:latest"));
+  assert.ok(compose.includes("ghcr.io/HendersonBasinger/icloud-mail-postgres:latest"));
   assert.equal(compose.includes("    build:\n"), false);
   assert.equal((compose.match(/pull_policy: always/g) || []).length, 2);
 

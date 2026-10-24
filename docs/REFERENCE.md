@@ -2,7 +2,7 @@
 
 本页保留完整的配置、批量删除、凭据轮换、旧接口兼容及成组备份说明。项目概览和当前发布版本见 [README](../README.md)。
 
-项目地址：<https://github.com/t508708/icloud-mail>。本项目基于 [mangobubu/icloud-api](https://github.com/mangobubu/icloud-api)；来源与当前许可状态见 [NOTICE.md](../NOTICE.md)。
+项目地址：<https://github.com/HendersonBasinger/icloud-mail>。本项目基于 [mangobubu/icloud-api](https://github.com/mangobubu/icloud-api)；来源与当前许可状态见 [NOTICE.md](../NOTICE.md)。
 
 包含 Web 控制面板、项目 Key、批量自动取号、幂等领取、确认/释放/续期、凭据联动轮换和定时创建。首次安装和交付包使用请先阅读 [交付与安装](../DELIVERY.md)，邮箱池说明见 [邮箱池](POOL.md)。复制 `.env.example` 后 HTTP 端口为 `8788`；不使用环境文件时 Compose 的默认端口为 `8080`。
 
@@ -42,7 +42,7 @@ iCloud 主号 INBOX
 要求 Docker Engine、Docker Compose v2。直连 iCloud IMAP 时需要 iCloud 主号 App 专用密码；iCloud 转发第三方 IMAP 或自定义邮箱模式则填写对应邮箱服务的 IMAP 密码。
 
 ```bash
-git clone https://github.com/t508708/icloud-mail.git
+git clone https://github.com/HendersonBasinger/icloud-mail.git
 cd icloud-mail
 cp -n .env.example .env
 docker compose up -d --build --wait

@@ -28,7 +28,7 @@ Web 主入口使用 Cloudflare 已激活的免费 Universal SSL（`*.gooelv.com`
 
 ## GitHub 源码发布
 
-公开仓库为 `https://github.com/t508708/icloud-mail`，由 GitHub fork 保留 `mangobubu/icloud-api` 的公开上游历史。公开同步目录是本项目下 `.local/github-publication/icloud-mail`，此目录有独立 Git 元数据和 GitHub noreply 作者地址；主工作区继续保留完整本机历史与原 `origin`，不要从主工作区推送分支、全部 refs 或本机标签到公开仓库。
+公开仓库为 `https://github.com/HendersonBasinger/icloud-mail`，由 GitHub fork 保留 `mangobubu/icloud-api` 的公开上游历史。公开同步目录是本项目下 `.local/github-publication/icloud-mail`，此目录有独立 Git 元数据和 GitHub noreply 作者地址；主工作区继续保留完整本机历史与原 `origin`，不要从主工作区推送分支、全部 refs 或本机标签到公开仓库。
 
 更新公开仓库时，先提交主工作区的源码改动，使用 `git archive HEAD` 按 `.gitattributes` 规则导出到独立临时目录；审查新增/删除文件、凭据扫描和测试后，再同步至公开仓库并提交。增量同步应处理已删除源码文件，保留公开目录的 `.git`。跳过本机运维文件、`.env`、`.local`、镜像、邮件和证书；发布操作不重建线上服务。GitHub 令牌仅用于当次进程内存，不保存到 Git remote、文件或项目记忆。
 
