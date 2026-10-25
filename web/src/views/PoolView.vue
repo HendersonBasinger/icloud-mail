@@ -827,22 +827,22 @@ async function releaseSelectedLeases() {
   } catch (e) {
     if (e !== "cancel" && e !== "close") error.value = e;
   }
-  async function commitSelectedLeases() {
-    const rows = selectedLeases.value.filter((row) => row.state === "leased");
-    if (!rows.length) return;
-    try {
-      await ElMessageBox.confirm(
-        `确定将选中的 ${rows.length} 个邮箱标记为已使用？标记后不会再自动回到库存。`,
-        "批量确认使用",
-        { type: "warning", confirmButtonText: "确认使用" },
-      );
-      await runBatchLeaseAction("/pool/leases/commit-batch", {
-        client_id: rows[0].client_id,
-        lease_ids: rows.map((row) => row.id),
-      }, `已确认使用 ${rows.length} 个邮箱`);
-    } catch (e) {
-      if (e !== "cancel" && e !== "close") error.value = e;
-    }
+}
+async function commitSelectedLeases() {
+  const rows = selectedLeases.value.filter((row) => row.state === "leased");
+  if (!rows.length) return;
+  try {
+    await ElMessageBox.confirm(
+      `确定将选中的 ${rows.length} 个邮箱标记为已使用？标记后不会再自动回到库存。`,
+      "批量确认使用",
+      { type: "warning", confirmButtonText: "确认使用" },
+    );
+    await runBatchLeaseAction("/pool/leases/commit-batch", {
+      client_id: rows[0].client_id,
+      lease_ids: rows.map((row) => row.id),
+    }, `已确认使用 ${rows.length} 个邮箱`);
+  } catch (e) {
+    if (e !== "cancel" && e !== "close") error.value = e;
   }
 }
 async function retireSelectedLeases() {
